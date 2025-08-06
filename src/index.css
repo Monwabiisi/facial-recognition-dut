@@ -1,13 +1,53 @@
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+/* 1️⃣ Import TailwindCSS base, components, and utilities */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 2️⃣ Import Google Fonts for futuristic typography */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Poppins:wght@300;400;500;600;700&display=swap');
+
+/* 3️⃣ Global styles for the futuristic theme */
+@layer base {
+  body {
+    @apply bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900;
+    @apply text-white font-futuristic;
+    @apply min-h-screen;
+  }
 }
 
-code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+/* 4️⃣ Custom component styles */
+@layer components {
+  /* Glassmorphism card effect */
+  .glass-card {
+    @apply backdrop-blur-md bg-white bg-opacity-10;
+    @apply border border-white border-opacity-20;
+    @apply rounded-2xl shadow-2xl;
+  }
+  
+  /* Neon button with glow effect */
+  .neon-button {
+    @apply px-6 py-3 rounded-lg font-semibold;
+    @apply bg-gradient-to-r from-neon-blue to-neon-purple;
+    @apply text-white border-0;
+    @apply transition-all duration-300;
+    @apply hover:shadow-lg hover:shadow-neon-blue/50;
+    @apply hover:scale-105;
+  }
+  
+  /* Input field with futuristic styling */
+  .futuristic-input {
+    @apply w-full px-4 py-3 rounded-lg;
+    @apply bg-white bg-opacity-10;
+    @apply border border-white border-opacity-30;
+    @apply text-white placeholder-gray-300;
+    @apply focus:outline-none focus:border-neon-blue;
+    @apply focus:shadow-lg focus:shadow-neon-blue/25;
+    @apply transition-all duration-300;
+  }
+  
+  /* Error message styling */
+  .error-message {
+    @apply text-red-400 text-sm mt-2;
+    @apply animate-pulse;
+  }
 }
