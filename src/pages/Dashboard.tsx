@@ -1,13 +1,15 @@
-// 1️⃣ Import React hooks, auth context, and our custom components
+// 1️⃣ Import React hooks, auth context, admin context, and our custom components
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useAdmin } from '../contexts/AdminContext';
 import Layout from '../layout/Layout';
 import Button, { ButtonGroup } from '../components/Button';
 
 // 2️⃣ Dashboard component with modern SaaS design
 export default function Dashboard() {
-  // 3️⃣ Get current user from auth context
+  // 3️⃣ Get current user from auth context and admin status
   const { currentUser } = useAuth();
+  const { isAdmin } = useAdmin();
   
   // 4️⃣ State for dashboard functionality
   const [attendanceCount, setAttendanceCount] = useState(0);
@@ -194,19 +196,27 @@ export default function Dashboard() {
           {/* User type card */}
           <div className="stats-card group">
             <div className="flex items-center justify-between mb-4">
-              <div className="p-3 bg-neon-pink/20 rounded-xl">
-                <svg className="w-6 h-6 text-neon-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
-                </svg>
+              <div className={`p-3 rounded-xl ${isAdmin ? 'bg-yellow-500/20' : 'bg-neon-pink/20'}`}>
+                {isAdmin ? (
+                  <svg className="w-6 h-6 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                  </svg>
+                ) : (
+                  <svg className="w-6 h-6 text-neon-pink" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                  </svg>
+                )}
               </div>
               <span className="text-xs font-body text-gray-400 group-hover:text-gray-300 transition-colors">
                 Role
               </span>
             </div>
-            <div className="text-3xl font-bold text-neon-pink mb-1">
-              USER
+            <div className={`text-3xl font-bold mb-1 ${isAdmin ? 'text-yellow-400' : 'text-neon-pink'}`}>
+              {isAdmin ? 'ADMIN' : 'USER'}
             </div>
-            <p className="text-gray-300 font-body text-sm">Account Type</p>
+            <p className="text-gray-300 font-body text-sm">
+              {isAdmin ? 'System Administrator' : 'Account Type'}
+            </p>
           </div>
         </div>
 
