@@ -1,4 +1,4 @@
-// 1️⃣ Import React Router and our components
+// 1️⃣ Import React, routing, and our components
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider } from './contexts/AuthContext';
@@ -13,39 +13,46 @@ function App() {
   return (
     // 3️⃣ Wrap entire app with Router for navigation
     <Router>
-      {/* 4️⃣ Wrap with AuthProvider to provide auth context to all components */}
+      {/* 4️⃣ Provide authentication context to all components */}
       <AuthProvider>
-        <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-violet-900">
-          {/* 5️⃣ Header component shows on all pages */}
+        <div className="App">
+          {/* 5️⃣ Header component (conditionally rendered based on route) */}
           <Header />
           
-          {/* 6️⃣ Define all application routes */}
-          <Routes>
-            {/* 7️⃣ Default route redirects to login */}
-            <Route path="/" element={<Navigate to="/login" replace />} />
-            
-            {/* 8️⃣ Public routes - accessible without authentication */}
-            <Route path="/login" element={<LoginPage />} />
-            <Route path="/register" element={<RegisterPage />} />
-            
-            {/* 9️⃣ Protected routes - require authentication */}
-            <Route 
-              path="/dashboard" 
-              element={
-                <ProtectedRoute>
-                  <Dashboard />
-                </ProtectedRoute>
-              } 
-            />
-            
-            {/* 🔟 Catch-all route for undefined paths */}
-            <Route path="*" element={<Navigate to="/login" replace />} />
-          </Routes>
+          {/* 6️⃣ Main content area with route definitions */}
+          <main>
+            <Routes>
+              {/* 7️⃣ Public routes - accessible without authentication */}
+              <Route path="/login" element={<LoginPage />} />
+              <Route path="/register" element={<RegisterPage />} />
+              
+              {/* 8️⃣ Protected routes - require authentication */}
+              <Route 
+                path="/dashboard" 
+                element={
+                  <ProtectedRoute>
+                    <Dashboard />
+                  </ProtectedRoute>
+                } 
+              />
+              
+              {/* 9️⃣ Default route - redirect to appropriate page */}
+              <Route 
+                path="/" 
+                element={<Navigate to="/dashboard" replace />} 
+              />
+              
+              {/* 🔟 Catch-all route - redirect unknown paths */}
+              <Route 
+                path="*" 
+                element={<Navigate to="/dashboard" replace />} 
+              />
+            </Routes>
+          </main>
         </div>
       </AuthProvider>
     </Router>
   );
 }
 
-// 1️⃣1️⃣ Export App component as default
 export default App;

@@ -1,176 +1,329 @@
-// 1️⃣ Import React hooks and navigation
-import React, { useState, useRef } from 'react';
+// 1️⃣ Import React hooks, navigation, and our custom components
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import Layout from '../layout/Layout';
+import Button from '../components/Button';
+import FormInput from '../components/FormInput';
 
-// 2️⃣ RegisterPage component with form validation and Firebase auth
+// 2️⃣ RegisterPage component with enhanced UI and comprehensive validation
 export default function RegisterPage() {
-  // 3️⃣ Form refs to access input values
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
-  const passwordConfirmRef = useRef<HTMLInputElement>(null);
-  
-  // 4️⃣ State for error messages and loading status
-  const [error, setError] = useState('');
+  // 3️⃣ State for form data and validation
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+    confirmPassword: ''
+  });
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [loading, setLoading] = useState(false);
+  const [passwordStrength, setPasswordStrength] = useState(0);
   
-  // 5️⃣ Get auth functions and navigation
+  // 4️⃣ Get auth functions and navigation
   const { signup } = useAuth();
   const navigate = useNavigate();
 
-  // 6️⃣ Handle form submission with validation
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();  // Prevent page refresh
+  // 5️⃣ Calculate password strength
+  const calculatePasswordStrength = (password: string) => {
+    let strength = 0;
+    if (password.length >= 8) strength += 1;
+    if (/[a-z]/.test(password)) strength += 1;
+    if (/[A-Z]/.test(password)) strength += 1;
+    if (/[0-9]/.test(password)) strength += 1;
+    if (/[^A-Za-z0-9]/.test(password)) strength += 1;
+    return strength;
+  };
+
+  // 6️⃣ Handle input changes with real-time validation
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
     
-    // 7️⃣ Get input values
-    const email = emailRef.current?.value;
-    const password = passwordRef.current?.value;
-    const passwordConfirm = passwordConfirmRef.current?.value;
+    // Calculate password strength for password field
+    if (field === 'password') {
+      setPasswordStrength(calculatePasswordStrength(value));
+    }
     
-    // 8️⃣ Form validation
-    if (!email || !password || !passwordConfirm) {
-      return setError('Please fill in all fields');
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // 7️⃣ Comprehensive form validation
+  const validateForm = () => {
+    const newErrors: {[key: string]: string} = {};
+
+    // Email validation
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
     }
 
-    if (password !== passwordConfirm) {
-      return setError('Passwords do not match');
+    // Password validation
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters long';
+    } else if (passwordStrength < 3) {
+      newErrors.password = 'Password is too weak. Include uppercase, lowercase, numbers, and symbols.';
     }
 
-    if (password.length < 6) {
-      return setError('Password must be at least 6 characters long');
+    // Confirm password validation
+    if (!formData.confirmPassword) {
+      newErrors.confirmPassword = 'Please confirm your password';
+    } else if (formData.password !== formData.confirmPassword) {
+      newErrors.confirmPassword = 'Passwords do not match';
     }
 
-    // 9️⃣ Email validation regex
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!emailRegex.test(email)) {
-      return setError('Please enter a valid email address');
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 8️⃣ Handle form submission with enhanced error handling
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Validate form before submission
+    if (!validateForm()) {
+      return;
     }
 
     try {
-      setError('');         // Clear any previous errors
-      setLoading(true);     // Show loading state
+      setLoading(true);
+      setErrors({});
       
-      // 🔟 Attempt to create account with Firebase
-      await signup(email, password);
+      // 9️⃣ Attempt to create account with Firebase
+      await signup(formData.email, formData.password);
       
-      // 1️⃣1️⃣ Redirect to dashboard on success
+      // 🔟 Redirect to dashboard on success
       navigate('/dashboard');
     } catch (error: any) {
-      // 1️⃣2️⃣ Handle registration errors with user-friendly messages
-      if (error.code === 'auth/email-already-in-use') {
-        setError('An account with this email already exists');
-      } else if (error.code === 'auth/weak-password') {
-        setError('Password is too weak');
-      } else if (error.code === 'auth/invalid-email') {
-        setError('Invalid email address');
-      } else {
-        setError('Failed to create account: ' + error.message);
+      // 1️⃣1️⃣ Handle registration errors with user-friendly messages
+      let errorMessage = 'Failed to create account. Please try again.';
+      
+      switch (error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage = 'An account with this email already exists. Please sign in instead.';
+          break;
+        case 'auth/weak-password':
+          errorMessage = 'Password is too weak. Please choose a stronger password.';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address format';
+          break;
+        case 'auth/operation-not-allowed':
+          errorMessage = 'Email/password accounts are not enabled. Please contact support.';
+          break;
+        default:
+          errorMessage = error.message || 'An unexpected error occurred';
       }
+      
+      setErrors({ general: errorMessage });
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);  // Hide loading state
-  }
+  };
+
+  // 1️⃣2️⃣ Get password strength color and text
+  const getPasswordStrengthInfo = () => {
+    switch (passwordStrength) {
+      case 0:
+      case 1:
+        return { color: 'bg-red-500', text: 'Very Weak', textColor: 'text-red-400' };
+      case 2:
+        return { color: 'bg-orange-500', text: 'Weak', textColor: 'text-orange-400' };
+      case 3:
+        return { color: 'bg-yellow-500', text: 'Fair', textColor: 'text-yellow-400' };
+      case 4:
+        return { color: 'bg-neon-blue', text: 'Good', textColor: 'text-neon-blue' };
+      case 5:
+        return { color: 'bg-neon-green', text: 'Strong', textColor: 'text-neon-green' };
+      default:
+        return { color: 'bg-gray-500', text: '', textColor: 'text-gray-400' };
+    }
+  };
+
+  const strengthInfo = getPasswordStrengthInfo();
 
   return (
-    // 1️⃣3️⃣ Main container with centered layout
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
-      {/* 1️⃣4️⃣ Register card with glassmorphism effect */}
-      <div className="glass-card w-full max-w-md p-8 space-y-6">
-        {/* 1️⃣5️⃣ Header section */}
-        <div className="text-center">
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-neon-blue to-neon-purple bg-clip-text text-transparent">
-            Create Account
-          </h2>
-          <p className="mt-2 text-gray-300">
-            Join Facial Recognition DUT
-          </p>
-        </div>
-
-        {/* 1️⃣6️⃣ Error message display */}
-        {error && (
-          <div className="error-message text-center">
-            {error}
-          </div>
-        )}
-
-        {/* 1️⃣7️⃣ Registration form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email input */}
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-              Email Address
-            </label>
-            <input
-              id="email"
-              ref={emailRef}
-              type="email"
-              required
-              className="futuristic-input"
-              placeholder="Enter your email"
-            />
-          </div>
-
-          {/* Password input */}
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
-              Password
-            </label>
-            <input
-              id="password"
-              ref={passwordRef}
-              type="password"
-              required
-              className="futuristic-input"
-              placeholder="Enter your password (min 6 characters)"
-            />
-          </div>
-
-          {/* Confirm password input */}
-          <div>
-            <label htmlFor="password-confirm" className="block text-sm font-medium text-gray-300 mb-2">
-              Confirm Password
-            </label>
-            <input
-              id="password-confirm"
-              ref={passwordConfirmRef}
-              type="password"
-              required
-              className="futuristic-input"
-              placeholder="Confirm your password"
-            />
-          </div>
-
-          {/* Submit button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full neon-button ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {loading ? (
-              // 1️⃣8️⃣ Loading spinner
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Creating Account...
+    <Layout>
+      {/* 1️⃣3️⃣ Main container with centered layout */}
+      <div className="min-h-screen flex items-center justify-center py-12">
+        <div className="w-full max-w-md space-y-8 animate-slide-up">
+          
+          {/* 1️⃣4️⃣ Header section with animated logo */}
+          <div className="text-center space-y-4">
+            {/* Animated logo */}
+            <div className="flex justify-center">
+              <div className="relative">
+                <div className="w-16 h-16 bg-gradient-to-r from-neon-purple to-neon-pink rounded-2xl flex items-center justify-center animate-float">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
+                  </svg>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-r from-neon-purple to-neon-pink rounded-2xl blur-lg opacity-50 animate-pulse"></div>
               </div>
-            ) : (
-              'Create Account'
-            )}
-          </button>
-        </form>
+            </div>
+            
+            {/* Welcome text */}
+            <div>
+              <h1 className="text-4xl font-bold font-heading gradient-text mb-2">
+                Join DUT
+              </h1>
+              <p className="text-gray-300 font-body">
+                Create your account for Facial Recognition DUT
+              </p>
+            </div>
+          </div>
 
-        {/* 1️⃣9️⃣ Login link */}
-        <div className="text-center">
-          <p className="text-gray-300">
-            Already have an account?{' '}
-            <Link 
-              to="/login" 
-              className="text-neon-blue hover:text-neon-purple transition-colors duration-300 font-semibold"
-            >
-              Sign in here
-            </Link>
-          </p>
+          {/* 1️⃣5️⃣ Registration form card */}
+          <div className="glass-card p-8 space-y-6">
+            {/* General error message */}
+            {errors.general && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 animate-slide-up">
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-red-400 font-body">{errors.general}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Registration form */}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Email input */}
+              <FormInput
+                label="Email Address"
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                error={errors.email}
+                variant={errors.email ? 'error' : 'default'}
+                helperText="We'll use this email for your DUT account"
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                  </svg>
+                }
+                required
+              />
+
+              {/* Password input with strength indicator */}
+              <div className="space-y-2">
+                <FormInput
+                  label="Password"
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => handleInputChange('password', e.target.value)}
+                  error={errors.password}
+                  variant={errors.password ? 'error' : 'default'}
+                  showPasswordToggle
+                  icon={
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                    </svg>
+                  }
+                  required
+                />
+                
+                {/* Password strength indicator */}
+                {formData.password && (
+                  <div className="px-1 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm font-body text-gray-400">Password Strength:</span>
+                      <span className={`text-sm font-semibold ${strengthInfo.textColor}`}>
+                        {strengthInfo.text}
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-700 rounded-full h-2">
+                      <div 
+                        className={`h-2 rounded-full transition-all duration-300 ${strengthInfo.color}`}
+                        style={{ width: `${(passwordStrength / 5) * 100}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Confirm Password input */}
+              <FormInput
+                label="Confirm Password"
+                type="password"
+                value={formData.confirmPassword}
+                onChange={(e) => handleInputChange('confirmPassword', e.target.value)}
+                error={errors.confirmPassword}
+                variant={errors.confirmPassword ? 'error' : 'default'}
+                showPasswordToggle
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                }
+                required
+              />
+
+              {/* Submit button */}
+              <Button
+                type="submit"
+                loading={loading}
+                fullWidth
+                size="lg"
+                className="mt-8"
+              >
+                {loading ? 'Creating Account...' : 'Create Account'}
+              </Button>
+            </form>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-transparent text-gray-400 font-body">
+                  Already have an account?
+                </span>
+              </div>
+            </div>
+
+            {/* Login link */}
+            <div className="text-center">
+              <Link 
+                to="/login" 
+                className="inline-flex items-center gap-2 text-neon-blue hover:text-neon-purple transition-colors duration-300 font-semibold font-body group"
+              >
+                Sign in instead
+                <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+
+          {/* 1️⃣6️⃣ Security features section */}
+          <div className="text-center space-y-4">
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-center gap-4 text-sm text-gray-300">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse"></div>
+                  <span>Encrypted</span>
+                </div>
+                <div className="w-px h-4 bg-white/20"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-blue rounded-full animate-pulse"></div>
+                  <span>Secure</span>
+                </div>
+                <div className="w-px h-4 bg-white/20"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-purple rounded-full animate-pulse"></div>
+                  <span>Private</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
-} 
+}

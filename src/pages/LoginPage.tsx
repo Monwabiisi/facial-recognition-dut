@@ -1,145 +1,246 @@
-// 1️⃣ Import React hooks and navigation
-import React, { useState, useRef } from 'react';
+// 1️⃣ Import React hooks, navigation, and our custom components
+import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import Layout from '../layout/Layout';
+import Button from '../components/Button';
+import FormInput from '../components/FormInput';
 
-// 2️⃣ LoginPage component with form validation and Firebase auth
+// 2️⃣ LoginPage component with enhanced UI and form validation
 export default function LoginPage() {
-  // 3️⃣ Form refs to access input values
-  const emailRef = useRef<HTMLInputElement>(null);
-  const passwordRef = useRef<HTMLInputElement>(null);
-  
-  // 4️⃣ State for error messages and loading status
-  const [error, setError] = useState('');
+  // 3️⃣ State for form data and validation
+  const [formData, setFormData] = useState({
+    email: '',
+    password: ''
+  });
+  const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [loading, setLoading] = useState(false);
   
-  // 5️⃣ Get auth functions and navigation
+  // 4️⃣ Get auth functions and navigation
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  // 6️⃣ Handle form submission
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();  // Prevent page refresh
+  // 5️⃣ Handle input changes with real-time validation
+  const handleInputChange = (field: string, value: string) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
     
-    // 7️⃣ Get input values
-    const email = emailRef.current?.value;
-    const password = passwordRef.current?.value;
+    // Clear error when user starts typing
+    if (errors[field]) {
+      setErrors(prev => ({ ...prev, [field]: '' }));
+    }
+  };
+
+  // 6️⃣ Validate form fields
+  const validateForm = () => {
+    const newErrors: {[key: string]: string} = {};
+
+    // Email validation
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email address';
+    }
+
+    // Password validation
+    if (!formData.password) {
+      newErrors.password = 'Password is required';
+    } else if (formData.password.length < 6) {
+      newErrors.password = 'Password must be at least 6 characters';
+    }
+
+    setErrors(newErrors);
+    return Object.keys(newErrors).length === 0;
+  };
+
+  // 7️⃣ Handle form submission with enhanced error handling
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
     
-    // 8️⃣ Basic validation
-    if (!email || !password) {
-      return setError('Please fill in all fields');
+    // Validate form before submission
+    if (!validateForm()) {
+      return;
     }
 
     try {
-      setError('');         // Clear any previous errors
-      setLoading(true);     // Show loading state
+      setLoading(true);
+      setErrors({});
       
-      // 9️⃣ Attempt to login with Firebase
-      await login(email, password);
+      // 8️⃣ Attempt to login with Firebase
+      await login(formData.email, formData.password);
       
-      // 🔟 Redirect to dashboard on success
+      // 9️⃣ Redirect to dashboard on success
       navigate('/dashboard');
     } catch (error: any) {
-      // 1️⃣1️⃣ Handle login errors with user-friendly messages
-      if (error.code === 'auth/user-not-found') {
-        setError('No account found with this email');
-      } else if (error.code === 'auth/wrong-password') {
-        setError('Incorrect password');
-      } else if (error.code === 'auth/invalid-email') {
-        setError('Invalid email address');
-      } else {
-        setError('Failed to log in: ' + error.message);
+      // 🔟 Handle login errors with user-friendly messages
+      let errorMessage = 'Failed to log in. Please try again.';
+      
+      switch (error.code) {
+        case 'auth/user-not-found':
+          errorMessage = 'No account found with this email address';
+          break;
+        case 'auth/wrong-password':
+          errorMessage = 'Incorrect password. Please try again.';
+          break;
+        case 'auth/invalid-email':
+          errorMessage = 'Invalid email address format';
+          break;
+        case 'auth/too-many-requests':
+          errorMessage = 'Too many failed attempts. Please try again later.';
+          break;
+        case 'auth/user-disabled':
+          errorMessage = 'This account has been disabled';
+          break;
+        default:
+          errorMessage = error.message || 'An unexpected error occurred';
       }
+      
+      setErrors({ general: errorMessage });
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);  // Hide loading state
-  }
+  };
 
   return (
-    // 1️⃣2️⃣ Main container with centered layout
-    <div className="min-h-screen flex items-center justify-center px-4 py-12">
-      {/* 1️⃣3️⃣ Login card with glassmorphism effect */}
-      <div className="glass-card w-full max-w-md p-8 space-y-6">
-        {/* 1️⃣4️⃣ Header section */}
-        <div className="text-center">
-          <h2 className="text-3xl font-bold bg-gradient-to-r from-neon-blue to-neon-purple bg-clip-text text-transparent">
-            Welcome Back
-          </h2>
-          <p className="mt-2 text-gray-300">
-            Sign in to your account
-          </p>
-        </div>
-
-        {/* 1️⃣5️⃣ Error message display */}
-        {error && (
-          <div className="error-message text-center">
-            {error}
-          </div>
-        )}
-
-        {/* 1️⃣6️⃣ Login form */}
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Email input */}
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-gray-300 mb-2">
-              Email Address
-            </label>
-            <input
-              id="email"
-              ref={emailRef}
-              type="email"
-              required
-              className="futuristic-input"
-              placeholder="Enter your email"
-            />
-          </div>
-
-          {/* Password input */}
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-gray-300 mb-2">
-              Password
-            </label>
-            <input
-              id="password"
-              ref={passwordRef}
-              type="password"
-              required
-              className="futuristic-input"
-              placeholder="Enter your password"
-            />
-          </div>
-
-          {/* Submit button */}
-          <button
-            type="submit"
-            disabled={loading}
-            className={`w-full neon-button ${loading ? 'opacity-50 cursor-not-allowed' : ''}`}
-          >
-            {loading ? (
-              // 1️⃣7️⃣ Loading spinner
-              <div className="flex items-center justify-center">
-                <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-white mr-2"></div>
-                Signing In...
+    <Layout>
+      {/* 1️⃣1️⃣ Main container with centered layout */}
+      <div className="min-h-screen flex items-center justify-center py-12">
+        <div className="w-full max-w-md space-y-8 animate-slide-up">
+          
+          {/* 1️⃣2️⃣ Header section with animated logo */}
+          <div className="text-center space-y-4">
+            {/* Animated logo */}
+            <div className="flex justify-center">
+              <div className="relative">
+                <div className="w-16 h-16 bg-gradient-to-r from-neon-blue to-neon-purple rounded-2xl flex items-center justify-center animate-float">
+                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                </div>
+                <div className="absolute inset-0 bg-gradient-to-r from-neon-blue to-neon-purple rounded-2xl blur-lg opacity-50 animate-pulse"></div>
               </div>
-            ) : (
-              'Sign In'
-            )}
-          </button>
-        </form>
+            </div>
+            
+            {/* Welcome text */}
+            <div>
+              <h1 className="text-4xl font-bold font-heading gradient-text mb-2">
+                Welcome Back
+              </h1>
+              <p className="text-gray-300 font-body">
+                Sign in to access your Facial Recognition DUT dashboard
+              </p>
+            </div>
+          </div>
 
-        {/* 1️⃣8️⃣ Register link */}
-        <div className="text-center">
-          <p className="text-gray-300">
-            Don't have an account?{' '}
-            <Link 
-              to="/register" 
-              className="text-neon-blue hover:text-neon-purple transition-colors duration-300 font-semibold"
-            >
-              Sign up here
-            </Link>
-          </p>
+          {/* 1️⃣3️⃣ Login form card */}
+          <div className="glass-card p-8 space-y-6">
+            {/* General error message */}
+            {errors.general && (
+              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 animate-slide-up">
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+                    <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                  </svg>
+                  <p className="text-red-400 font-body">{errors.general}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Login form */}
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {/* Email input */}
+              <FormInput
+                label="Email Address"
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                error={errors.email}
+                variant={errors.email ? 'error' : 'default'}
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                  </svg>
+                }
+                required
+              />
+
+              {/* Password input */}
+              <FormInput
+                label="Password"
+                type="password"
+                value={formData.password}
+                onChange={(e) => handleInputChange('password', e.target.value)}
+                error={errors.password}
+                variant={errors.password ? 'error' : 'default'}
+                showPasswordToggle
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                  </svg>
+                }
+                required
+              />
+
+              {/* Submit button */}
+              <Button
+                type="submit"
+                loading={loading}
+                fullWidth
+                size="lg"
+                className="mt-8"
+              >
+                {loading ? 'Signing In...' : 'Sign In'}
+              </Button>
+            </form>
+
+            {/* Divider */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-transparent text-gray-400 font-body">
+                  Don't have an account?
+                </span>
+              </div>
+            </div>
+
+            {/* Register link */}
+            <div className="text-center">
+              <Link 
+                to="/register" 
+                className="inline-flex items-center gap-2 text-neon-blue hover:text-neon-purple transition-colors duration-300 font-semibold font-body group"
+              >
+                Create your account
+                <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
+                </svg>
+              </Link>
+            </div>
+          </div>
+
+          {/* 1️⃣4️⃣ Additional features section */}
+          <div className="text-center space-y-4">
+            <div className="glass-card p-4">
+              <div className="flex items-center justify-center gap-4 text-sm text-gray-300">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse"></div>
+                  <span>Secure Login</span>
+                </div>
+                <div className="w-px h-4 bg-white/20"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-blue rounded-full animate-pulse"></div>
+                  <span>Face Recognition</span>
+                </div>
+                <div className="w-px h-4 bg-white/20"></div>
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 bg-neon-purple rounded-full animate-pulse"></div>
+                  <span>DUT Integration</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
+    </Layout>
   );
-} 
+}
