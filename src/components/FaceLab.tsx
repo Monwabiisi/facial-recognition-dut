@@ -6,6 +6,45 @@ import React, {
   useCallback,
 } from "react";
 import { useCamera } from "../hooks/useCamera";
+import { RecognitionResult, EnrollmentData } from "../types/recognition";
+import { recognize, enroll, listEnrollments, clearAllEnrollments } from "../engines/recognition";
+
+import Human from "human";
+import * as faceapi from "face-api.js";
+import { FaceDetection } from "@mediapipe/face_detection";
+// We avoid @mediapipe/camera_utils to prevent play() conflicts
+
+type HumanFaceBox = { box: [number, number, number, number] };
+type Engine = "mediapipe" | "human" | "faceapi";
+const ENGINE_ORDER: Engine[] = ["mediapipe", "human", "faceapi"];
+
+type Box = { x: number; y: number; width: number; height: number };
+
+export default function FaceLab() {
+  const cam = useCamera() as any;
+  const videoRef = cam.videoRef as React.RefObject<HTMLVideoElement>;
+  const ready = cam.ready as boolean;
+  const flipCamera = cam.flipCamera as (() => void) | undefined;
+  const facing = (cam.facing as "user" | "environment" | undefined) ?? "user";
+
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  const [engine, setEngine] = useState<Engine>("mediapipe");
+  const [autoFallback, setAutoFallback] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string>("");
+  
+  // New states for recognition features
+  const [isEnrollMode, setIsEnrollMode] = useState(false);
+  const [enrollName, setEnrollName] = useState("");
+  const [enrollments, setEnrollments] = useState<EnrollmentData[]>([]);
+  const [recognitionResults, setRecognitionResults] = useState<RecognitionResult[]>([]);
+  const [unknownClusters, setUnknownClusters] = useState<{[key: string]: number}>({})mo,
+  useRef,
+  useState,
+  useCallback,
+} from "react";
+import { useCamera } from "../hooks/useCamera";
 
 import Human from "human";
 import * as faceapi from "face-api.js";
@@ -268,86 +307,116 @@ export default function FaceLab() {
   }, [videoRef, engine]);
 
   return (
-    <div className="p-4 space-y-3">
-      {/* Controls */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex gap-2">
-          <button
-            className={`px-3 py-2 rounded ${
-              engine === "mediapipe" ? "bg-blue-600 text-white" : "bg-gray-200"
-            }`}
-            onClick={() => setEngine("mediapipe")}
-          >
-            MediaPipe
-          </button>
-          <button
-            className={`px-3 py-2 rounded ${
-              engine === "human" ? "bg-blue-600 text-white" : "bg-gray-200"
-            }`}
-            onClick={() => setEngine("human")}
-          >
-            Human
-          </button>
-          <button
-            className={`px-3 py-2 rounded ${
-              engine === "faceapi" ? "bg-blue-600 text-white" : "bg-gray-200"
-            }`}
-            onClick={() => setEngine("faceapi")}
-          >
-            face‑api.js
-          </button>
+    <div className="p-4 max-w-[1200px] mx-auto">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Main Video Section - Takes 8 columns on large screens */}
+        <div className="lg:col-span-8 space-y-4">
+          {/* Error banner */}
+          {errorMsg && (
+            <div className="text-sm p-3 rounded-lg bg-red-100 text-red-800 border border-red-200">
+              {errorMsg}
+            </div>
+          )}
+
+          {/* Video Container */}
+          <div className="relative rounded-xl overflow-hidden bg-gray-900 shadow-lg">
+            <video
+              ref={videoRef}
+              muted
+              playsInline
+              className="w-full aspect-[4/3] object-cover"
+            />
+            <canvas ref={canvasRef} className="absolute left-0 top-0" />
+            
+            {/* Video Controls Overlay */}
+            <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
+              <div className="flex items-center gap-3 text-white">
+                <span className="text-sm font-medium">
+                  {fps} FPS
+                </span>
+                {typeof flipCamera === "function" && (
+                  <button
+                    className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
+                    onClick={flipCamera}
+                    title="Flip camera (phones)"
+                  >
+                    Flip Camera
+                  </button>
+                )}
+                <button
+                  className="px-3 py-1.5 rounded-full bg-emerald-500/80 hover:bg-emerald-500 transition-colors ml-auto"
+                  onClick={takeScreenshot}
+                >
+                  Take Screenshot
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={autoFallback}
-            onChange={(e) => setAutoFallback(e.target.checked)}
-          />
-          <span>Auto‑fallback</span>
-        </label>
+        {/* Controls Panel - Takes 4 columns on large screens */}
+        <div className="lg:col-span-4 space-y-6">
+          {/* Engine Selection */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold mb-3">Detection Engine</h3>
+            <div className="space-y-2">
+              {ENGINE_ORDER.map((e) => (
+                <button
+                  key={e}
+                  className={`w-full px-4 py-2.5 rounded-lg text-left font-medium transition-colors ${
+                    engine === e 
+                      ? "bg-blue-600 text-white" 
+                      : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                  }`}
+                  onClick={() => setEngine(e)}
+                >
+                  {e === "mediapipe" && "MediaPipe (Fast)"}
+                  {e === "human" && "Human (Accurate)"}
+                  {e === "faceapi" && "face-api.js (Recognition)"}
+                </button>
+              ))}
+              
+              {/* Options */}
+              <label className="flex items-center gap-2 mt-4 text-sm text-gray-600">
+                <input
+                  type="checkbox"
+                  checked={autoFallback}
+                  onChange={(e) => setAutoFallback(e.target.checked)}
+                  className="rounded"
+                />
+                <span>Enable Auto-fallback</span>
+              </label>
+            </div>
+          </div>
 
-        {/* Flip works on phones / multi‑cam devices; harmless elsewhere */}
-        {typeof flipCamera === "function" && (
-          <button
-            className="px-3 py-2 rounded bg-gray-200"
-            onClick={flipCamera}
-            title="Flip camera (phones)"
-          >
-            Flip ({facing})
-          </button>
-        )}
+          {/* Engine Features Panel */}
+          <div className="bg-white rounded-xl p-4 shadow-sm border border-gray-200">
+            <h3 className="text-lg font-semibold mb-3">Engine Features</h3>
+            <div className="space-y-2 text-sm text-gray-600">
+              <p className="flex items-center gap-2">
+                <span className={engine === "mediapipe" ? "text-blue-600 font-medium" : ""}>
+                  MediaPipe: Fast detection, low resource usage
+                </span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className={engine === "human" ? "text-blue-600 font-medium" : ""}>
+                  Human: High accuracy, advanced facial landmarks
+                </span>
+              </p>
+              <p className="flex items-center gap-2">
+                <span className={engine === "faceapi" ? "text-blue-600 font-medium" : ""}>
+                  face-api.js: Face recognition & emotion detection
+                </span>
+              </p>
+            </div>
+          </div>
 
-        <button
-          className="px-3 py-2 rounded bg-emerald-600 text-white"
-          onClick={takeScreenshot}
-        >
-          Screenshot
-        </button>
-
-        <span className="ml-auto text-xs rounded bg-black/80 text-white px-2 py-1">
-          {engine} • {fps} FPS
-        </span>
-
-        {loading && <span className="text-sm text-gray-500">Loading…</span>}
-      </div>
-
-      {/* Error banner */}
-      {errorMsg && (
-        <div className="text-sm p-2 rounded bg-red-100 text-red-800">
-          {errorMsg}
+          {loading && (
+            <div className="text-center py-3 text-sm text-gray-500">
+              Loading engine...
+            </div>
+          )}
         </div>
-      )}
-
-      {/* Video + overlay */}
-      <div className="relative inline-block">
-        <video
-          ref={videoRef}
-          muted
-          playsInline
-          className="rounded-md shadow w-[640px] h-[480px] bg-black"
-        />
-        <canvas ref={canvasRef} className="absolute left-0 top-0" />
       </div>
     </div>
   );

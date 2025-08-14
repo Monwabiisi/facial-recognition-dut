@@ -2,14 +2,14 @@
 import { initializeApp } from "firebase/app";
 import { getAuth } from "firebase/auth";
 
-// 2️⃣ Firebase configuration object with your project credentials
+// 2️⃣ Firebase configuration object from environment variables
 const firebaseConfig = {
-  apiKey: "AIzaSyABaGiknaVHKOcAJvsp4kTyiPeYbq72f18",
-  authDomain: "facial-recognition-dut.firebaseapp.com",
-  projectId: "facial-recognition-dut",
-  storageBucket: "facial-recognition-dut.appspot.com",
-  messagingSenderId: "901097273414",
-  appId: "1:901097273414:web:fc93101a7dc108ffbdf247"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID
 };
 
 // 3️⃣ Initialize Firebase app with the configuration

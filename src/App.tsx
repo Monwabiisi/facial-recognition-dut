@@ -1,58 +1,84 @@
-// src/App.tsx
-import React from "react";
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import React from 'react';
+import { Routes, Route, Navigate } from 'react-router-dom';
+import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuthProvider } from './contexts/AuthContext';
+import { AdminProvider } from './contexts/AdminContext';
+import LoginPage from './pages/LoginPage';
+import RegisterPage from './pages/RegisterPage';
+import Camera from './pages/Camera';
+import VerifyPage from './pages/VerifyPage';
+import EnrollPage from './pages/EnrollPage';
+import TeacherDashboard from './pages/TeacherDashboard';
+import ProtectedRoute from './components/ProtectedRoute';
+import RoleBadge from './components/RoleBadge';
+import UserMenu from './components/UserMenu';
 
-import { AuthProvider } from "./contexts/AuthContext";
-import { AdminProvider } from "./contexts/AdminContext";
 
-import Header from "./components/Header";
-import ProtectedRoute from "./components/ProtectedRoute";
-import LoginPage from "./pages/LoginPage";
-import RegisterPage from "./pages/RegisterPage";
-import Dashboard from "./pages/Dashboard";
-import FaceLab from "./components/FaceLab";
-
-function App() {
+export default function App() {
   return (
-    <Router>
+    <ErrorBoundary>
       <AuthProvider>
         <AdminProvider>
-          <div className="App">
-            <Header />
-            <main>
+          <div className="min-h-dvh bg-background-primary text-gray-900">
+            {/* Top bar with role badge and navigation */}
+            <div className="p-3 flex justify-between items-center bg-white shadow-sm">
+              <nav className="flex space-x-4">
+                <RoleBadge />
+              </nav>
+              <div className="flex items-center space-x-4">
+                <UserMenu />
+              </div>
+            </div>
+
+            {/* Main content */}
+            <main className="container mx-auto px-4 py-8">
               <Routes>
-                {/* Public */}
+                {/* Public routes */}
+                <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
 
-                {/* Protected */}
+                {/* Protected routes */}
                 <Route
-                  path="/dashboard"
+                  path="/camera"
                   element={
                     <ProtectedRoute>
-                      <Dashboard />
+                      <Camera />
                     </ProtectedRoute>
                   }
                 />
                 <Route
-                  path="/facelab"
+                  path="/verify"
                   element={
                     <ProtectedRoute>
-                      <FaceLab />
+                      <VerifyPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/enroll"
+                  element={
+                    <ProtectedRoute requireRole="teacher">
+                      <EnrollPage />
+                    </ProtectedRoute>
+                  }
+                />
+                <Route
+                  path="/teacher"
+                  element={
+                    <ProtectedRoute requireRole="teacher">
+                      <TeacherDashboard />
                     </ProtectedRoute>
                   }
                 />
 
-                {/* Default */}
-                <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                {/* Catch-all */}
+                <Route path="*" element={<Navigate to="/login" replace />} />
               </Routes>
             </main>
           </div>
         </AdminProvider>
       </AuthProvider>
-    </Router>
+    </ErrorBoundary>
   );
 }
-
-export default App;

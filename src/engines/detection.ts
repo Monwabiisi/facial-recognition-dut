@@ -1,52 +1,58 @@
+// Helper: convert normalized points to pixel coordinates
+function normToPixels(pts: Array<{x:number; y:number}>, w:number, h:number) {
+  return pts.map(p => [p.x * w, p.y * h] as [number, number]);
+}
 // src/engines/detection.ts
-// Face detection engine wrapper with MediaPipe, Human, and face-api.js.
-// Fixes TS error: "Human refers to a value, but is being used as a type".
+// Unified detection layer for: MediaPipe Face Detection, MediaPipe Face Mesh, Human, face-api.js.
+// You can call detectOnce(...) for boxes, or detectMeshOnce(...) for landmarks.
 
 import * as faceapi from 'face-api.js';
 import Human from '@vladmandic/human';
 import { FaceDetection } from '@mediapipe/face_detection';
+import { FaceMesh } from '@mediapipe/face_mesh';
+// No cross-imports for Box type; only use the one defined here.
 
-export type Engine = 'mediapipe' | 'human' | 'faceapi';
+// Engines we support in the UI
+export type Engine = 'faceapi' | 'human' | 'mediapipe';
 export type Box = { x: number; y: number; width: number; height: number };
-
-// Create a proper *type* for an instance of the Human class
 type HumanInstance = InstanceType<typeof Human>;
 
-/**
- * Load model assets for the selected engine.
- * - faceapi: loads TinyFace + Landmarks + Recognition from public URL
- * - human: loads configured models via human.load()
- */
+/** Load models/resources for selected engine. */
 export async function initEngine(engine: Engine, human?: HumanInstance) {
   if (engine === 'faceapi') {
     const url = 'https://justadudewhohacks.github.io/face-api.js/models';
     await Promise.all([
       faceapi.nets.tinyFaceDetector.loadFromUri(url),
       faceapi.nets.faceLandmark68Net.loadFromUri(url),
-      faceapi.nets.faceRecognitionNet.loadFromUri(url),
+      faceapi.nets.faceRecognitionNet.loadFromUri(url)
     ]);
   }
-
   if (engine === 'human' && human) {
-    // Human is a class (value). Call load() on the instance.
+    // human.load() fetches configured models; default config is enough for face boxes.
     await human.load();
   }
+  // MediaPipe libs download models on demand via CDN, nothing to preload here.
 }
 
-/**
- * One-shot detection helper (useful for screenshots/enroll flows)
- * Accepts a HTMLVideoElement or HTMLImageElement as input.
- */
+/** One-shot face *box* detection across engines. */
+export interface DetectionResult extends Box {
+  confidence?: number;
+  landmarks?: Array<[number, number]>;
+  embedding?: Float32Array;
+}
+
 export async function detectOnce(
   engine: Engine,
   input: HTMLVideoElement | HTMLImageElement,
   human?: HumanInstance
-): Promise<Box[]> {
+): Promise<DetectionResult[]> {
   if (engine === 'mediapipe') {
+    // Use MediaPipe Face Detection for fast bounding boxes
     const fd = new FaceDetection({
-      locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`,
+      locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`
     });
     fd.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
+
 
     return new Promise<Box[]>((resolve) => {
       fd.onResults((res: any) => {
@@ -60,38 +66,52 @@ export async function detectOnce(
             x: bb.xCenter * vidW - (bb.width * vidW) / 2,
             y: bb.yCenter * vidH - (bb.height * vidH) / 2,
             width: bb.width * vidW,
-            height: bb.height * vidH,
+            height: bb.height * vidH
           };
         });
+
+        // NEW: stash mesh landmarks for drawMesh()
+        if (res.multiFaceLandmarks?.length) {
+          (window as any).__lastFaceMesh = res.multiFaceLandmarks.map((lm: any[]) =>
+            normToPixels(lm, vidW, vidH)
+          );
+        } else {
+          (window as any).__lastFaceMesh = [];
+        }
+
         resolve(out);
       });
-
-      // For one-shot, send a single frame/image
+      // Send a single frame. For streaming, call in a loop.
       fd.send({ image: input });
     });
   }
 
   if (engine === 'human' && human) {
-    // Human returns face.box as [x, y, width, height]
+    // Human returns faces with .box = [x, y, w, h]
     const res = await human.detect(input as HTMLVideoElement);
-    return (res.face || []).map((f: any) => {
+    const faces = res.face || [];
+    // Stash mesh landmarks for drawMesh()
+    (window as any).__lastFaceMesh = faces.map((f: any) => {
+      return (f.mesh ?? []) as Array<[number, number]>;
+    });
+    return faces.map((f: any) => {
       const [x, y, w, h] = f.box as [number, number, number, number];
       return { x, y, width: w, height: h };
     });
   }
 
-  // face-api.js flow: detect → landmarks → descriptors (descriptors not used here yet)
+  // face-api.js TinyFace detector
   const results = await faceapi
     .detectAllFaces(
       input as HTMLVideoElement,
       new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.5 })
     )
-    .withFaceLandmarks()
-    .withFaceDescriptors();
+    .withFaceLandmarks(); // landmarks computed but we only return box here
 
-  // Normalize to our Box type
   return results.map((r) => {
     const { x, y, width, height } = r.detection.box;
     return { x, y, width, height };
   });
 }
+
+// Mesh detection is currently disabled due to missing types. Uncomment and fix if needed.

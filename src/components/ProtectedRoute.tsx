@@ -1,19 +1,87 @@
-// 1️⃣ Import React and navigation components
-import React, { ReactNode } from 'react';
-import { Navigate } from 'react-router-dom';
+import React from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
+import { User } from 'firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
+import { Role, getUserRole } from '../utils/roles';
 
-// 2️⃣ Interface for ProtectedRoute props
-interface ProtectedRouteProps {
-  children: ReactNode;
+type State = 'loading' | 'ok' | 'deny' | 'error';
+
+async function getRoleFromFirestore(user: User | null): Promise<Role> {
+  if (!user) return 'unknown';
+  try {
+    const snapshot = await getDoc(doc(db, 'roles', user.uid));
+    if (!snapshot.exists()) return 'student'; // Default to student if no role set
+    const role = snapshot.data()?.role;
+    return role === 'teacher' ? 'teacher' : 'student';
+  } catch (error) {
+    console.error('Error fetching role:', error);
+    return 'unknown';
+  }
 }
 
-// 3️⃣ ProtectedRoute component that checks authentication
-export default function ProtectedRoute({ children }: ProtectedRouteProps) {
-  // 4️⃣ Get current user from auth context
-  const { currentUser } = useAuth();
+export default function ProtectedRoute({
+  children,
+  requireRole = 'teacher',
+}: {
+  children: React.ReactNode;
+  requireRole?: Role;
+}) {
+  const [state, setState] = React.useState<State>('loading');
+  const [user, setUser] = React.useState<User | null>(null);
 
-  // 5️⃣ If user is not authenticated, redirect to login page
-  // If user is authenticated, render the protected content
-  return currentUser ? <>{children}</> : <Navigate to="/login" />;
-} 
+  React.useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  React.useEffect(() => {
+    let mounted = true;
+
+    const checkRole = async () => {
+      try {
+        const role = await getRoleFromFirestore(user);
+        
+        if (!mounted) return;
+
+        if (!user) {
+          setState('deny');
+        } else if (requireRole === 'teacher' && role !== 'teacher') {
+          setState('deny');
+        } else {
+          setState('ok');
+        }
+      } catch (error) {
+        console.error('Error in ProtectedRoute:', error);
+        if (mounted) setState('error');
+      }
+    };
+
+    checkRole();
+    return () => { mounted = false; };
+  }, [user, requireRole]);
+
+  if (state === 'loading') {
+    return (
+      <div className="flex items-center justify-center p-6">
+        <div className="text-gray-600">Checking permissions...</div>
+      </div>
+    );
+  }
+
+  if (state === 'error') {
+    return (
+      <div className="flex items-center justify-center p-6">
+        <div className="text-red-600">Error checking permissions. Please try again later.</div>
+      </div>
+    );
+  }
+
+  if (state === 'deny') {
+    return <Navigate to="/login" replace />;
+  }
+
+  return <>{children}</>;
+}

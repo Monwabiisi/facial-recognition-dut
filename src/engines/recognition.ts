@@ -65,32 +65,68 @@ function euclidean(a: Float32Array, b: Float32Array) {
   return Math.sqrt(sum);
 }
 
-export async function recognize(video: HTMLVideoElement, threshold = 0.6) {
+export async function recognize(
+  video: HTMLVideoElement,
+  threshold = 0.6,
+  maxAttempts = 3
+) {
   const store = loadStore();
-  if (!store.length) return { label: "unknown", distance: 1 };
+  if (!store.length) return { label: "unknown", distance: 1, confidence: 0 };
 
-  const query = await detectDescriptorFromVideo(video);
-  if (!query) return { label: "no-face", distance: 1 };
+  // Try multiple times to get a good descriptor
+  let bestDescriptor: Float32Array | null = null;
+  let attempts = 0;
+  
+  while (attempts < maxAttempts) {
+    const descriptor = await detectDescriptorFromVideo(video);
+    if (descriptor) {
+      bestDescriptor = descriptor;
+      break;
+    }
+    attempts++;
+    // Small delay between attempts
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+
+  if (!bestDescriptor) return { label: "no-face", distance: 1, confidence: 0 };
 
   let bestLabel = "unknown";
   let bestDist = 1;
+  let confidence = 0;
 
-  const q = query as Float32Array;
+  // Enhanced matching algorithm
   for (const entry of store) {
-    // average distance against all enrolled samples for this label
-    let total = 0;
-    for (const d of entry.descriptors) {
-      total += euclidean(q, new Float32Array(d));
-    }
-    const avg = total / entry.descriptors.length;
-    if (avg < bestDist) {
-      bestDist = avg;
+    // Calculate distances to all descriptors for this label
+    const distances = entry.descriptors.map(d => 
+      euclidean(bestDescriptor!, new Float32Array(d))
+    );
+
+    // Sort distances and take average of best matches
+    distances.sort((a, b) => a - b);
+    const topN = Math.max(1, Math.min(3, Math.floor(distances.length / 2)));
+    const avgDist = distances.slice(0, topN).reduce((a, b) => a + b, 0) / topN;
+
+    if (avgDist < bestDist) {
+      bestDist = avgDist;
       bestLabel = entry.label;
+      // Calculate confidence score (0-1)
+      confidence = Math.max(0, Math.min(1, 1 - (bestDist / threshold)));
     }
   }
 
-  if (bestDist > threshold) return { label: "unknown", distance: bestDist };
-  return { label: bestLabel, distance: bestDist };
+  if (bestDist > threshold) {
+    return { 
+      label: "unknown", 
+      distance: bestDist,
+      confidence: 0
+    };
+  }
+
+  return { 
+    label: bestLabel, 
+    distance: bestDist,
+    confidence: confidence
+  };
 }
 
 export function clearAllEnrollments() {
