@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { useCamera } from "../hooks/useCamera";
-import * as faceapi from "face-api.js";
+import { Camera } from "./Camera";
 import { recognize, enroll, listEnrollments, clearAllEnrollments } from "../engines/recognition";
+import { DetectionResult } from "../engines/detection";
 
 interface RecognitionResult {
   label: string;
@@ -15,11 +15,9 @@ interface EnrollmentData {
 }
 
 export default function AttendanceRecognition() {
-  const cam = useCamera();
-  const videoRef = cam.videoRef as React.RefObject<HTMLVideoElement>;
+  const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const ready = cam.ready as boolean;
-  const flipCamera = cam.flipCamera as (() => void) | undefined;
+  const [latestDetections, setLatestDetections] = useState<DetectionResult[]>([]);
 
   const [isEnrollMode, setIsEnrollMode] = useState(false);
   const [enrollName, setEnrollName] = useState("");
@@ -33,62 +31,31 @@ export default function AttendanceRecognition() {
     setEnrollments(listEnrollments());
   }, []);
 
-  // Recognition loop
-  useEffect(() => {
-    if (!ready || isEnrollMode) return;
-    
-    let cancelled = false;
-    let raf: number;
+  const handleDetections = useCallback(async (detections: DetectionResult[]) => {
+    setLatestDetections(detections);
+    if (isEnrollMode || !videoRef.current) return;
 
-    const recognitionLoop = async () => {
-      if (!videoRef.current || cancelled) return;
+    const results: RecognitionResult[] = [];
+    for (const detection of detections) {
+      if (detection.embedding) {
+        const result = await recognize(detection.embedding, videoRef.current, detection);
+        results.push({
+          label: result.label,
+          confidence: result.confidence,
+          box: detection
+        });
 
-      try {
-        // Detect all faces
-        const detections = await faceapi
-          .detectAllFaces(videoRef.current, new faceapi.TinyFaceDetectorOptions())
-          .withFaceLandmarks()
-          .withFaceDescriptors();
-
-        // Process each face
-        const results: RecognitionResult[] = [];
-        for (const detection of detections) {
-          const video = videoRef.current;
-          if (!video) continue;
-
-          // Get recognition result
-          const result = await recognize(video);
-          
-          results.push({
-            label: result.label,
-            confidence: result.confidence,
-            box: detection.detection.box
-          });
-
-          // Update unknown clusters if face not recognized
-          if (result.label === "unknown") {
-            const clusterId = Date.now().toString(); // Simple clustering for demo
-            setUnknownClusters(prev => ({
-              ...prev,
-              [clusterId]: (prev[clusterId] || 0) + 1
-            }));
-          }
+        if (result.label === "unknown") {
+          const clusterId = Date.now().toString();
+          setUnknownClusters(prev => ({
+            ...prev,
+            [clusterId]: (prev[clusterId] || 0) + 1
+          }));
         }
-
-        setRecognitionResults(results);
-      } catch (error) {
-        console.error("Recognition error:", error);
       }
-
-      raf = requestAnimationFrame(recognitionLoop);
-    };
-
-    recognitionLoop();
-    return () => {
-      cancelled = true;
-      if (raf) cancelAnimationFrame(raf);
-    };
-  }, [ready, isEnrollMode, videoRef]);
+    }
+    setRecognitionResults(results);
+  }, [isEnrollMode, videoRef]);
 
   // Draw results on canvas
   useEffect(() => {
@@ -132,15 +99,22 @@ export default function AttendanceRecognition() {
   // Handle enrollment
   const handleEnroll = async () => {
     if (!videoRef.current || !enrollName.trim()) return;
+
+    const detection = latestDetections[0];
+    if (!detection || !detection.embedding) {
+      alert("No face detected. Please position your face in the center of the camera.");
+      return;
+    }
     
     setLoading(true);
     try {
-      await enroll(enrollName.trim(), videoRef.current);
+      await enroll(enrollName.trim(), detection.embedding, videoRef.current, detection);
       setEnrollments(listEnrollments());
       setEnrollName("");
       setIsEnrollMode(false);
     } catch (error) {
       console.error("Enrollment error:", error);
+      alert(`Enrollment failed: ${error instanceof Error ? error.message : String(error)}`);
     }
     setLoading(false);
   };
@@ -151,25 +125,17 @@ export default function AttendanceRecognition() {
         {/* Main Video Section */}
         <div className="lg:col-span-8 space-y-4">
           <div className="relative rounded-xl overflow-hidden bg-gray-900 shadow-lg">
-            <video
-              ref={videoRef}
-              muted
-              playsInline
-              className="w-full aspect-[4/3] object-cover"
+            <Camera
+              onFaceDetected={handleDetections}
+              isActive={!isEnrollMode}
+              engine="faceapi"
+              onVideoReady={(videoEl) => (videoRef.current = videoEl)}
             />
             <canvas ref={canvasRef} className="absolute left-0 top-0" />
 
             {/* Video Controls */}
             <div className="absolute bottom-0 left-0 right-0 p-4 bg-gradient-to-t from-black/70 to-transparent">
               <div className="flex items-center gap-3 text-white">
-                {typeof flipCamera === "function" && (
-                  <button
-                    className="px-3 py-1.5 rounded-full bg-white/20 hover:bg-white/30 transition-colors"
-                    onClick={flipCamera}
-                  >
-                    Flip Camera
-                  </button>
-                )}
                 <button
                   className={`px-3 py-1.5 rounded-full transition-colors ${
                     isEnrollMode 

@@ -1,0 +1,11 @@
+{
+  "known": [
+    { "path": "/eval/known/alex1.jpg", "label": "alex" },
+    { "path": "/eval/known/alex2.jpg", "label": "alex" },
+    { "path": "/eval/known/sam1.jpg",  "label": "sam"  }
+  ],
+  "unknown": [
+    { "path": "/eval/unknown/u1.jpg" },
+    { "path": "/eval/unknown/u2.jpg" }
+  ]
+}

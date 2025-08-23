@@ -2,6 +2,7 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 import type { UserConfig } from 'vite';
+import { VitePWA } from 'vite-plugin-pwa';
 
 // https://vitejs.dev/config/
 export default defineConfig(({ command, mode }): UserConfig => {
@@ -21,6 +22,40 @@ export default defineConfig(({ command, mode }): UserConfig => {
         // Enable Fast Refresh
         fastRefresh: true,
       }),
+      VitePWA({
+        registerType: 'autoUpdate',
+        includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'robots.txt'],
+        manifest: {
+          name: 'DUT Facial Recognition',
+          short_name: 'DUT-FR',
+          description: 'Facial Recognition App for Durban University of Technology',
+          theme_color: '#ffffff',
+          icons: [
+            {
+              src: 'logo192.png',
+              sizes: '192x192',
+              type: 'image/png',
+            },
+            {
+              src: 'logo512.png',
+              sizes: '512x512',
+              type: 'image/png',
+            },
+            {
+              src: 'logo512.png',
+              sizes: '512x512',
+              type: 'image/png',
+              purpose: 'any maskable',
+            }
+          ]
+        },
+        workbox: {
+          globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+          // Do not cache large models
+          globIgnores: ['**/models/**'],
+          maximumFileSizeToCacheInBytes: 3145728, // 3 MB
+        }
+      })
     ],
     resolve: {
       alias: {
@@ -70,7 +105,7 @@ export default defineConfig(({ command, mode }): UserConfig => {
               'react',
               'react-dom',
               'react-router-dom',
-              'firebase',
+              'firebase/app',
               '@mediapipe/face_detection',
               '@mediapipe/face_mesh',
             ],
@@ -87,37 +122,30 @@ export default defineConfig(({ command, mode }): UserConfig => {
         "@mediapipe/camera_utils",
         "@vladmandic/human",
         "face-api.js",
+        "firebase/app",
+        "firebase/auth",
+        "firebase/firestore",
       ],
-      exclude: ['firebase'],
     },
     // TypeScript configuration
     esbuild: {
       jsxInject: `import React from 'react'`,
       target: 'es2020',
     },
-    // Enable PWA
-    pwa: {
-      strategies: 'injectManifest',
-      srcDir: 'src',
-      filename: 'service-worker.ts',
-      registerType: 'prompt',
-      includeAssets: ['favicon.ico', 'robots.txt', 'apple-touch-icon.png'],
-      manifest: {
-        name: 'DUT Facial Recognition',
-        short_name: 'DUT-FR',
-        theme_color: '#ffffff',
-        icons: [
-          {
-            src: '/logo192.png',
-            sizes: '192x192',
-            type: 'image/png',
-          },
-          {
-            src: '/logo512.png',
-            sizes: '512x512',
-            type: 'image/png',
-          },
-        ],
+    test: {
+      environment: 'jsdom',
+      setupFiles: './src/setupTests.ts',
+      globals: true,
+      css: true,
+      restoreMocks: true,
+      coverage: { reporter: ['text', 'lcov'] },
+      env: {
+        VITE_FIREBASE_API_KEY: 'mock_key',
+        VITE_FIREBASE_AUTH_DOMAIN: 'mock_domain',
+        VITE_FIREBASE_PROJECT_ID: 'mock_project_id',
+        VITE_FIREBASE_STORAGE_BUCKET: 'mock_bucket',
+        VITE_FIREBASE_MESSAGING_SENDER_ID: 'mock_sender_id',
+        VITE_FIREBASE_APP_ID: 'mock_app_id',
       },
     },
   };
