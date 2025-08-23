@@ -12,6 +12,7 @@ import TeacherDashboard from './pages/TeacherDashboard';
 import ProtectedRoute from './components/ProtectedRoute';
 import RoleBadge from './components/RoleBadge';
 import UserMenu from './components/UserMenu';
+import EvalPage from './pages/EvalPage';
 
 
 export default function App() {
@@ -37,6 +38,7 @@ export default function App() {
                 <Route path="/" element={<Navigate to="/login" replace />} />
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterPage />} />
+                <Route path="/eval" element={<EvalPage />} />
 
                 {/* Protected routes */}
                 <Route

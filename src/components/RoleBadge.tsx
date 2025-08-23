@@ -1,11 +1,11 @@
-import React from 'react';
+import { useState, useEffect } from 'react';
 import { auth, db } from '../services/firebase';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 
 export default function RoleBadge() {
-  const [role, setRole] = React.useState<'teacher'|'student'|'guest'>('guest');
+  const [role, setRole] = useState<'teacher'|'student'|'guest'>('guest');
 
-  React.useEffect(() => {
+  useEffect(() => {
     // update role reactively if roles/{uid} changes
     const unsubAuth = auth.onAuthStateChanged(async (u) => {
       if (!u) return setRole('guest');

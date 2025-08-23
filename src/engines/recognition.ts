@@ -1,5 +1,10 @@
 // src/engines/recognition.ts
 import * as faceapi from "face-api.js";
+import { generateEmbedding, calculateSimilarity } from "../ml/ml";
+import { FirestoreEmbeddingsStore } from "../services/embeddingsStore.firestore";
+import { FACE_RECOGNITION_THRESHOLD, FACENET_SIMILARITY_THRESHOLD } from "../config/thresholds";
+
+const embeddingsStore = new FirestoreEmbeddingsStore();
 
 export type LabeledDescriptor = {
   label: string;
@@ -29,23 +34,7 @@ export async function loadFaceApiModels() {
   ]);
 }
 
-export async function detectDescriptorFromVideo(
-  video: HTMLVideoElement
-): Promise<Float32Array | null> {
-  const det = await faceapi
-    .detectSingleFace(
-      video,
-      new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.5 })
-    )
-    .withFaceLandmarks()
-    .withFaceDescriptor();
-  return det?.descriptor ?? null;
-}
-
-export async function enroll(label: string, video: HTMLVideoElement) {
-  const desc = await detectDescriptorFromVideo(video);
-  if (!desc) throw new Error("No face found for enrollment");
-
+export async function enroll(label: string, desc: Float32Array, video: HTMLVideoElement, detectionBox: { x: number; y: number; width: number; height: number; }) {
   const store = loadStore();
   const existing = store.find((s) => s.label.toLowerCase() === label.toLowerCase());
   if (existing) {
@@ -54,6 +43,25 @@ export async function enroll(label: string, video: HTMLVideoElement) {
     store.push({ label, descriptors: [Array.from(desc)] });
   }
   saveStore(store);
+
+  // Generate and save FaceNet embedding
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) {
+    console.error("Could not get canvas context for embedding");
+    return;
+  }
+
+  const { x, y, width, height } = detectionBox;
+  canvas.width = width;
+  canvas.height = height;
+  context.drawImage(video, x, y, width, height, 0, 0, width, height);
+  const imageDataUrl = canvas.toDataURL('image/jpeg');
+
+  const embedding = await generateEmbedding(imageDataUrl);
+  if (embedding) {
+    await embeddingsStore.addEmbedding(label, Array.from(embedding));
+  }
 }
 
 function euclidean(a: Float32Array, b: Float32Array) {
@@ -66,29 +74,13 @@ function euclidean(a: Float32Array, b: Float32Array) {
 }
 
 export async function recognize(
+  bestDescriptor: Float32Array,
   video: HTMLVideoElement,
-  threshold = 0.6,
-  maxAttempts = 3
+  detectionBox: { x: number; y: number; width: number; height: number; },
+  threshold = FACE_RECOGNITION_THRESHOLD
 ) {
   const store = loadStore();
   if (!store.length) return { label: "unknown", distance: 1, confidence: 0 };
-
-  // Try multiple times to get a good descriptor
-  let bestDescriptor: Float32Array | null = null;
-  let attempts = 0;
-  
-  while (attempts < maxAttempts) {
-    const descriptor = await detectDescriptorFromVideo(video);
-    if (descriptor) {
-      bestDescriptor = descriptor;
-      break;
-    }
-    attempts++;
-    // Small delay between attempts
-    await new Promise(resolve => setTimeout(resolve, 100));
-  }
-
-  if (!bestDescriptor) return { label: "no-face", distance: 1, confidence: 0 };
 
   let bestLabel = "unknown";
   let bestDist = 1;
@@ -120,6 +112,37 @@ export async function recognize(
       distance: bestDist,
       confidence: 0
     };
+  }
+
+  // FaceNet cross-validation
+  if (bestLabel !== 'unknown') {
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    if (!context) {
+      console.error("Could not get canvas context for embedding");
+      return { label: bestLabel, distance: bestDist, confidence }; // return original result
+    }
+
+    const { x, y, width, height } = detectionBox;
+    canvas.width = width;
+    canvas.height = height;
+    context.drawImage(video, x, y, width, height, 0, 0, width, height);
+    const imageDataUrl = canvas.toDataURL('image/jpeg');
+
+    const currentEmbedding = await generateEmbedding(imageDataUrl);
+    if (currentEmbedding) {
+      const storedEmbeddings = await embeddingsStore.getEmbeddings(bestLabel);
+      if (storedEmbeddings && storedEmbeddings.length > 0) {
+        const similarities = storedEmbeddings.map(stored =>
+          calculateSimilarity(currentEmbedding, new Float32Array(stored))
+        );
+        const maxSimilarity = Math.max(...similarities);
+
+        if (maxSimilarity < FACENET_SIMILARITY_THRESHOLD) {
+          return { label: "unknown", distance: bestDist, confidence: 0 };
+        }
+      }
+    }
   }
 
   return { 

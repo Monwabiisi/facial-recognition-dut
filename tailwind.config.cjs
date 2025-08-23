@@ -50,19 +50,18 @@ module.exports = {
           heavy: 'rgba(255, 255, 255, 0.2)',
           border: 'rgba(255, 255, 255, 0.25)'
         },
-      // 2️⃣ Custom animations for glowing effects and smooth transitions
+      },
       animation: {
-        // Professional, subtle animations with performance considerations
         'fade': 'fade 200ms ease-out',
         'slide-up': 'slideUp 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         'slide-down': 'slideDown 300ms cubic-bezier(0.4, 0, 0.2, 1)',
         'scale': 'scale 200ms ease-out',
         'loading': 'loading 2s ease-in-out infinite',
         'progress': 'progress 1s ease-out',
-        // Reduced motion preferences respected
         'safe-spin': 'safeSpin 1s linear infinite',
+        'matrix-text': 'matrix 20s linear infinite',
+        'cyber-pulse': 'cyberPulse 1.5s ease-in-out infinite'
       },
-      // Performance-optimized keyframes
       keyframes: {
         fade: {
           '0%': { opacity: '0' },
@@ -83,15 +82,21 @@ module.exports = {
         scaleIn: {
           '0%': { transform: 'scale(0.95)', opacity: '0' },
           '100%': { transform: 'scale(1)', opacity: '1' }
+        },
+        matrix: {
+          '0%': { backgroundPosition: '0% 0%' },
+          '100%': { backgroundPosition: '100% 100%' }
+        },
+        cyberPulse: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.8' },
+          '50%': { transform: 'scale(1.05)', opacity: '1' }
         }
       },
-      // Professional typography system
       fontFamily: {
         sans: ['Inter var', 'system-ui', '-apple-system', 'sans-serif'],
         display: ['SF Pro Display', 'Inter var', 'system-ui', 'sans-serif'],
         mono: ['SF Mono', 'JetBrains Mono', 'Menlo', 'monospace'],
       },
-      // Type scale based on perfect fourth (1.333)
       fontSize: {
         'xs': ['0.75rem', { lineHeight: '1rem' }],
         'sm': ['0.875rem', { lineHeight: '1.25rem' }],
@@ -102,7 +107,6 @@ module.exports = {
         '3xl': ['2.369rem', { lineHeight: '2.5rem' }],
         '4xl': ['3.157rem', { lineHeight: '1' }],
       },
-      // Professional spacing scale
       spacing: {
         '4xs': '0.125rem', // 2px
         '3xs': '0.25rem',  // 4px
@@ -119,7 +123,6 @@ module.exports = {
         '88': '22rem',
         '128': '32rem',
       },
-      // Professional blur system
       backdropBlur: {
         'none': '0',
         'sm': '4px',
@@ -127,27 +130,9 @@ module.exports = {
         'lg': '16px',
         'xl': '24px',
       },
-      // 7️⃣ Custom border radius for modern look
       borderRadius: {
         '4xl': '2rem',
         '5xl': '2.5rem',
-      }
-    },
-  },
-  plugins: [
-    require('@tailwindcss/forms')({
-      strategy: 'class',
-    }),
-    require('@tailwindcss/typography'),
-    require('@tailwindcss/aspect-ratio'),
-  ],
-  future: {
-    hoverOnlyWhenSupported: true,
-    respectDefaultRingColorOpacity: true,
-    disableColorOpacityUtilitiesByDefault: true,
-  },
-  experimental: {
-    optimizeUniversalDefaults: true,
       },
       backgroundImage: {
         'gradient-professional': 'linear-gradient(135deg, var(--tw-gradient-from) 0%, var(--tw-gradient-to) 100%)',
@@ -157,25 +142,12 @@ module.exports = {
       boxShadow: {
         'neon': '0 0 5px rgba(0,245,255,0.5), 0 0 20px rgba(0,245,255,0.3)',
         'glow-purple': '0 0 15px rgba(191,0,255,0.6)',
-        'inner-glow': 'inset 0 0 20px rgba(255,255,255,0.15)'
+        'inner-glow': 'inset 0 0 20px rgba(255,255,255,0.15)',
+        'soft': '0 8px 24px rgba(0,0,0,0.08)'
       },
       backdropFilter: {
         'glass': 'blur(16px) saturate(180%)'
       },
-      animation: {
-        'matrix-text': 'matrix 20s linear infinite',
-        'cyber-pulse': 'cyberPulse 1.5s ease-in-out infinite'
-      },
-      keyframes: {
-        matrix: {
-          '0%': { backgroundPosition: '0% 0%' },
-          '100%': { backgroundPosition: '100% 100%' }
-        },
-        cyberPulse: {
-          '0%, 100%': { transform: 'scale(1)', opacity: '0.8' },
-          '50%': { transform: 'scale(1.05)', opacity: '1' }
-        }
-      }
     }
   },
   plugins: [

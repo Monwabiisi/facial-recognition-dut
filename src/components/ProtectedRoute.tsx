@@ -1,8 +1,10 @@
-import React from 'react';
+import { useState, useEffect, ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { User } from 'firebase/auth';
+import { User, onAuthStateChanged } from 'firebase/auth';
 import { useAuth } from '../contexts/AuthContext';
-import { Role, getUserRole } from '../utils/roles';
+import { Role } from '../utils/roles';
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '../services/firebase';
 
 type State = 'loading' | 'ok' | 'deny' | 'error';
 
@@ -23,13 +25,13 @@ export default function ProtectedRoute({
   children,
   requireRole = 'teacher',
 }: {
-  children: React.ReactNode;
+  children: ReactNode;
   requireRole?: Role;
 }) {
-  const [state, setState] = React.useState<State>('loading');
-  const [user, setUser] = React.useState<User | null>(null);
+  const [state, setState] = useState<State>('loading');
+  const [user, setUser] = useState<User | null>(null);
 
-  React.useEffect(() => {
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });
@@ -37,7 +39,7 @@ export default function ProtectedRoute({
     return () => unsubscribe();
   }, []);
 
-  React.useEffect(() => {
+  useEffect(() => {
     let mounted = true;
 
     const checkRole = async () => {

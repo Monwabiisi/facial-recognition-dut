@@ -19,7 +19,7 @@ interface AuthContextType {
 }
 
 // 3️⃣ Create the Auth context with undefined default value
-const AuthContext = createContext<AuthContextType | undefined>(undefined);
+export const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 // 4️⃣ Custom hook to use the Auth context with error checking
 export function useAuth() {

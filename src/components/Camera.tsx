@@ -1,109 +1,127 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Engine, detectOnce, initEngine } from '../engines/detection';
+import { Engine, detectOnce, initEngine, DetectionResult } from '../engines/detection';
 import Human from '@vladmandic/human';
+import { useCamera } from '../hooks/useCamera';
 
 interface Props {
-  onFaceDetected?: (faces: any[]) => void;
+  onFaceDetected?: (faces: DetectionResult[]) => void;
   isActive?: boolean;
   engine?: Engine; // Allow engine selection
+  onVideoReady?: (video: HTMLVideoElement) => void;
+  onCameraError?: (error: Error) => void;
 }
 
-export const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, engine = 'mediapipe' }) => {
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [isInitialized, setIsInitialized] = useState(false);
-  const [error, setError] = useState<string>('');
+export const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, engine = 'mediapipe', onVideoReady, onCameraError }) => {
+  const { videoRef, ready: cameraReady, error } = useCamera();
+  const [isEngineInitialized, setIsEngineInitialized] = useState(false);
+
+  useEffect(() => {
+    if (error && onCameraError) {
+      onCameraError(error);
+    }
+  }, [error, onCameraError]);
+
+  useEffect(() => {
+    if (videoRef.current && onVideoReady) {
+      onVideoReady(videoRef.current);
+    }
+  }, [videoRef, onVideoReady]);
   
   // Initialize Human.js instance
   const [human] = useState(() => new Human());
-  const humanRef = useRef<Human>();
+  const humanRef = useRef(human);
+
+  const [progressMessage, setProgressMessage] = useState('Initializing camera...');
 
   useEffect(() => {
-    async function setupCamera() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: {
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
-            facingMode: 'user'
-          }
-        });
-
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          await initEngine(engine, humanRef.current);
-          setIsInitialized(true);
-        }
-      } catch (err: any) {
-        setError(err.message || 'Failed to initialize camera');
-        console.error('Camera setup error:', err);
-      }
+    if (cameraReady && !isEngineInitialized) {
+      const onProgress = (message: string) => {
+        setProgressMessage(message);
+      };
+      initEngine(engine, humanRef.current, onProgress).then(() => {
+        setIsEngineInitialized(true);
+      });
     }
+    if (!cameraReady) {
+      setProgressMessage('Initializing camera...');
+    }
+  }, [cameraReady, isEngineInitialized, engine]);
 
-    setupCamera();
+  const isInitialized = cameraReady && isEngineInitialized;
+  const workerRef = useRef<Worker>();
 
-    return () => {
-      // Cleanup: stop camera stream when component unmounts
-      if (videoRef.current?.srcObject) {
-        const stream = videoRef.current.srcObject as MediaStream;
-        stream.getTracks().forEach(track => track.stop());
+  useEffect(() => {
+    workerRef.current = new Worker(new URL('../workers/detection.worker.ts', import.meta.url), { type: 'module' });
+    workerRef.current.onmessage = (event) => {
+      if (onFaceDetected) {
+        const { faces } = event.data;
+        const detectionResults: DetectionResult[] = faces.map((face: any) => ({
+            x: face.box.x,
+            y: face.box.y,
+            width: face.box.width,
+            height: face.box.height,
+            confidence: face.score,
+            landmarks: face.landmarks,
+            embedding: face.embedding
+        }));
+        onFaceDetected(detectionResults);
       }
     };
-  }, []);
+
+    return () => {
+      workerRef.current?.terminate();
+    };
+  }, [onFaceDetected]);
 
   useEffect(() => {
     if (!isInitialized || !isActive || !videoRef.current) return;
 
     let animationFrame: number;
-    
-    async function detectFaces() {
-      if (!videoRef.current) return;
 
-      try {
-        const faces = await detectOnce(engine, videoRef.current, humanRef.current);
-        if (onFaceDetected) {
-          onFaceDetected(faces);
-        }
-      } catch (err) {
-        console.error('Face detection error:', err);
+    const detectionLoop = async () => {
+      if (videoRef.current && !videoRef.current.paused && !videoRef.current.ended) {
+        const imageBitmap = await createImageBitmap(videoRef.current);
+        workerRef.current?.postMessage({ imageBitmap, engine, humanConfig: humanRef.current.config }, [imageBitmap]);
       }
-
-      // Continue detection loop while active
       if (isActive) {
-        animationFrame = requestAnimationFrame(detectFaces);
+        animationFrame = requestAnimationFrame(detectionLoop);
       }
-    }
+    };
 
-    detectFaces();
+    detectionLoop();
 
     return () => {
       if (animationFrame) {
         cancelAnimationFrame(animationFrame);
       }
     };
-  }, [isInitialized, isActive, onFaceDetected]);
+  }, [isInitialized, isActive, engine, videoRef]);
 
   if (error) {
     return (
-      <div className="rounded-lg bg-interface-error bg-opacity-10 p-4 text-interface-error">
-        {error}
+      <div className="rounded-lg bg-red-100 p-4 text-red-700">
+        <p className="font-bold">Camera Error</p>
+        <p>{error.message}</p>
       </div>
     );
   }
 
   return (
     <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-900">
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        className="w-full h-full object-cover"
-      />
+      {cameraReady && (
+        <video
+          ref={videoRef}
+          autoPlay
+          playsInline
+          muted
+          className="w-full h-full object-cover"
+        />
+      )}
       
       {/* Loading indicator */}
       {!isInitialized && (
         <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75">
-          <div className="text-white animate-pulse">Initializing camera...</div>
+          <div className="text-white animate-pulse">{progressMessage}</div>
         </div>
       )}
     </div>

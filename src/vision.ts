@@ -34,6 +34,12 @@ export function drawMesh(ctx: CanvasRenderingContext2D, pts: Point[], color = "#
   ctx.restore();
 }
 
+export function drawBoxes(ctx: CanvasRenderingContext2D, boxes: Box[], color = "#22c55e") {
+    for (const b of boxes) {
+        drawBox(ctx, b, color);
+    }
+}
+
 /**
  * Draws a label above or below a bounding box.
  */

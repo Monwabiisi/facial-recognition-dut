@@ -9,6 +9,7 @@ function normToPixels(pts: Array<{x:number; y:number}>, w:number, h:number) {
 import * as faceapi from 'face-api.js';
 import Human from '@vladmandic/human';
 import { FaceDetection } from '@mediapipe/face_detection';
+import { TINY_FACE_DETECTOR_SCORE_THRESHOLD, MEDIAPIPE_MIN_DETECTION_CONFIDENCE } from '../config/thresholds';
 import { FaceMesh } from '@mediapipe/face_mesh';
 // No cross-imports for Box type; only use the one defined here.
 
@@ -18,19 +19,22 @@ export type Box = { x: number; y: number; width: number; height: number };
 type HumanInstance = InstanceType<typeof Human>;
 
 /** Load models/resources for selected engine. */
-export async function initEngine(engine: Engine, human?: HumanInstance) {
+export async function initEngine(engine: Engine, human?: HumanInstance, onProgress?: (progress: string) => void) {
   if (engine === 'faceapi') {
     const url = 'https://justadudewhohacks.github.io/face-api.js/models';
-    await Promise.all([
-      faceapi.nets.tinyFaceDetector.loadFromUri(url),
-      faceapi.nets.faceLandmark68Net.loadFromUri(url),
-      faceapi.nets.faceRecognitionNet.loadFromUri(url)
-    ]);
+    if (onProgress) onProgress('Loading TinyFaceDetector model...');
+    await faceapi.nets.tinyFaceDetector.loadFromUri(url);
+    if (onProgress) onProgress('Loading FaceLandmark68Net model...');
+    await faceapi.nets.faceLandmark68Net.loadFromUri(url);
+    if (onProgress) onProgress('Loading FaceRecognitionNet model...');
+    await faceapi.nets.faceRecognitionNet.loadFromUri(url);
   }
   if (engine === 'human' && human) {
+    if (onProgress) onProgress('Loading Human models...');
     // human.load() fetches configured models; default config is enough for face boxes.
     await human.load();
   }
+  if (onProgress) onProgress('Engine initialized.');
   // MediaPipe libs download models on demand via CDN, nothing to preload here.
 }
 
@@ -51,7 +55,7 @@ export async function detectOnce(
     const fd = new FaceDetection({
       locateFile: (f: string) => `https://cdn.jsdelivr.net/npm/@mediapipe/face_detection/${f}`
     });
-    fd.setOptions({ model: 'short', minDetectionConfidence: 0.6 });
+    fd.setOptions({ model: 'short', minDetectionConfidence: MEDIAPIPE_MIN_DETECTION_CONFIDENCE });
 
 
     return new Promise<Box[]>((resolve) => {
@@ -104,13 +108,14 @@ export async function detectOnce(
   const results = await faceapi
     .detectAllFaces(
       input as HTMLVideoElement,
-      new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: 0.5 })
+      new faceapi.TinyFaceDetectorOptions({ inputSize: 256, scoreThreshold: TINY_FACE_DETECTOR_SCORE_THRESHOLD })
     )
-    .withFaceLandmarks(); // landmarks computed but we only return box here
+    .withFaceLandmarks()
+    .withFaceDescriptors();
 
   return results.map((r) => {
     const { x, y, width, height } = r.detection.box;
-    return { x, y, width, height };
+    return { x, y, width, height, embedding: r.descriptor };
   });
 }
 

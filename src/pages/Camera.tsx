@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styled from 'styled-components';
 import { initEngine, detectOnce, type Engine, type Box } from '../engines/detection';
-import Human from 'human';
+import Human from '@vladmandic/human';
 import { drawBoxes, drawMesh, clearCanvas } from '../vision';
 import DetectionFeedback from '../components/DetectionFeedback';
 
