@@ -10,7 +10,7 @@ import FormInput from '../components/FormInput';
 export default function RegisterPage() {
   // 3️⃣ State for form data and validation
   const [formData, setFormData] = useState({
-    email: '',
+    username: '',
     password: '',
     confirmPassword: ''
   });
@@ -52,11 +52,9 @@ export default function RegisterPage() {
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
 
-    // Email validation
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+    // Username validation
+    if (!formData.username) {
+      newErrors.username = 'Username is required';
     }
 
     // Password validation
@@ -92,33 +90,14 @@ export default function RegisterPage() {
       setLoading(true);
       setErrors({});
       
-      // 9️⃣ Attempt to create account with Firebase
-      await signup(formData.email, formData.password);
+      // 9️⃣ Attempt to create account with our backend
+      await signup(formData.username, formData.password);
       
       // 🔟 Redirect to dashboard on success
       navigate('/dashboard');
     } catch (error: any) {
       // 1️⃣1️⃣ Handle registration errors with user-friendly messages
-      let errorMessage = 'Failed to create account. Please try again.';
-      
-      switch (error.code) {
-        case 'auth/email-already-in-use':
-          errorMessage = 'An account with this email already exists. Please sign in instead.';
-          break;
-        case 'auth/weak-password':
-          errorMessage = 'Password is too weak. Please choose a stronger password.';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Invalid email address format';
-          break;
-        case 'auth/operation-not-allowed':
-          errorMessage = 'Email/password accounts are not enabled. Please contact support.';
-          break;
-        default:
-          errorMessage = error.message || 'An unexpected error occurred';
-      }
-      
-      setErrors({ general: errorMessage });
+      setErrors({ general: error.message || 'An unexpected error occurred' });
     } finally {
       setLoading(false);
     }
@@ -192,18 +171,18 @@ export default function RegisterPage() {
 
             {/* Registration form */}
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Email input */}
+              {/* Username input */}
               <FormInput
-                label="Email Address"
-                type="email"
-                value={formData.email}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                error={errors.email}
-                variant={errors.email ? 'error' : 'default'}
-                helperText="We'll use this email for your DUT account"
+                label="Username"
+                type="text"
+                value={formData.username}
+                onChange={(e) => handleInputChange('username', e.target.value)}
+                error={errors.username}
+                variant={errors.username ? 'error' : 'default'}
+                helperText="This will be your public username."
                 icon={
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 }
                 required
