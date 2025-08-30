@@ -21,6 +21,7 @@
     "@vladmandic/human": "^3.3.5",
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
+    "express": "^5.1.0",
     "face-api.js": "^0.22.2",
     "firebase": "^12.1.0",
     "papaparse": "^5.5.3",
@@ -29,6 +30,7 @@
     "react-dom": "^18.2.0",
     "react-dropzone": "^14.3.8",
     "react-router-dom": "^6.20.0",
+    "sqlite3": "^5.1.7",
     "styled-components": "^6.1.1",
     "web-vitals": "^3.5.0"
   },
