@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import authService from '../services/authService';
 
 interface User {
   id: number;
@@ -30,37 +31,49 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session
-    const savedUser = localStorage.getItem('dut_user');
-    if (savedUser) {
-      try {
-        setUser(JSON.parse(savedUser));
-      } catch (error) {
-        localStorage.removeItem('dut_user');
+    // Check for existing session; if none, attempt to auto-login as admin (dev mode)
+    const init = async () => {
+      const savedUser = localStorage.getItem('dut_user');
+      if (savedUser) {
+        try {
+          setUser(JSON.parse(savedUser));
+          setLoading(false);
+          return;
+        } catch (error) {
+          localStorage.removeItem('dut_user');
+        }
       }
-    }
-    setLoading(false);
+
+      // Dev mode: Always set an admin user without requiring login
+      const devAdmin: User = {
+        id: 1,
+        name: 'Development Admin',
+        email: 'admin@dut.ac.za',
+        studentId: 'ADMINDUT',
+        role: 'teacher' as const
+      };
+      setUser(devAdmin);
+      try { 
+        localStorage.setItem('dut_user', JSON.stringify(devAdmin)); 
+      } catch (e) { /* ignore */ }
+      setLoading(false);
+    };
+
+    init();
   }, []);
 
   const login = async (email: string, password: string): Promise<void> => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock user data
-      const mockUser: User = {
-        id: 1,
-        name: 'John Doe',
-        email: email,
-        studentId: 'DUT12345',
-        role: email.includes('teacher') ? 'teacher' : 'student'
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('dut_user', JSON.stringify(mockUser));
-    } catch (error) {
-      throw new Error('Login failed');
+  const resp = await authService.login({ email, password });
+      if (resp && resp.user) {
+        setUser(resp.user as User);
+        localStorage.setItem('dut_user', JSON.stringify(resp.user));
+      } else {
+        throw new Error('Invalid login response');
+      }
+    } catch (error: any) {
+      throw new Error(error?.message || 'Login failed');
     } finally {
       setLoading(false);
     }
@@ -69,21 +82,14 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const register = async (name: string, email: string, password: string, studentId?: string): Promise<void> => {
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      const mockUser: User = {
-        id: Date.now(),
-        name,
-        email,
-        studentId,
-        role: 'student'
-      };
-      
-      setUser(mockUser);
-      localStorage.setItem('dut_user', JSON.stringify(mockUser));
-    } catch (error) {
-      throw new Error('Registration failed');
+      // Call backend register via authService
+  const resp = await authService.register({ studentId: studentId || '', name, email, password });
+      // We intentionally do NOT auto-login the user after registration. Clear any saved auth from authService.
+      authService.logout();
+      // Return to caller for redirect to login
+      return;
+    } catch (error: any) {
+      throw new Error(error?.message || 'Registration failed');
     } finally {
       setLoading(false);
     }

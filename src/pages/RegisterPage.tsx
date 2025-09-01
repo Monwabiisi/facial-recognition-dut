@@ -58,14 +58,12 @@ export default function RegisterPage() {
       newErrors.email = 'Email is required';
     } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
       newErrors.email = 'Please enter a valid email';
+    } else if (!formData.email.toLowerCase().endsWith('@dut4life.ac.za')) {
+      newErrors.email = 'Only DUT emails (dut4life.ac.za) are allowed';
     }
 
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 8) {
-      newErrors.password = 'Password must be at least 8 characters';
-    } else if (passwordStrength < 3) {
-      newErrors.password = 'Password is too weak';
     }
 
     if (!formData.confirmPassword) {
@@ -86,11 +84,12 @@ export default function RegisterPage() {
     try {
       setLoading(true);
       setErrors({});
-      
-      // Simulate registration
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      navigate('/dashboard');
+  // Use the password the user entered in the form
+  await register(formData.name, formData.email.toLowerCase(), formData.password, formData.studentId);
+
+      // Show simple success message then redirect to login
+      setErrors({ general: 'Registration complete. Please login with your DUT account.' });
+      setTimeout(() => navigate('/login'), 1400);
     } catch (error: any) {
       setErrors({ general: error.message || 'Registration failed' });
     } finally {

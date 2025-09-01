@@ -51,11 +51,43 @@ export default function LoginPage() {
       setLoading(true);
       setErrors({});
       
-      // Simulate login - replace with actual auth service
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      // Mock successful login
-      navigate('/dashboard');
+      // Call real login
+      await login(formData.email.toLowerCase(), formData.password);
+
+      // Role-based redirect: admin -> admin dashboard
+      const usersResp = await fetch('http://localhost:5000/api/users');
+      let role = '';
+      if (usersResp.ok) {
+        const usersList = await usersResp.json();
+        const currentUser = usersList.find((u: any) => (u.email || '').toLowerCase() === formData.email.toLowerCase() || (u.student_id || '').toLowerCase() === formData.email.toLowerCase().split('@')[0]);
+        role = currentUser?.role || '';
+      } else {
+        // If users endpoint failed, fallback to dashboard for safety
+        role = '';
+      }
+      if (role === 'teacher' || role === 'admin') {
+        navigate('/admin');
+      } else {
+        // After login, check how many embeddings this user has and redirect to enrollment if < 10
+        try {
+          const resp = await fetch('http://localhost:5000/api/faces');
+          if (resp.ok) {
+            const all = await resp.json();
+            const userEmail = formData.email.toLowerCase();
+            // match by email field from joined query
+            const userEmbeddings = all.filter((r: any) => (r.email || '').toLowerCase() === userEmail || (r.student_id || '').toLowerCase() === userEmail.split('@')[0]);
+            if (userEmbeddings.length < 10) {
+              navigate('/enroll');
+            } else {
+              navigate('/dashboard');
+            }
+          } else {
+            navigate('/dashboard');
+          }
+        } catch (err) {
+          navigate('/dashboard');
+        }
+      }
     } catch (error: any) {
       setErrors({ general: error.message || 'Login failed' });
     } finally {

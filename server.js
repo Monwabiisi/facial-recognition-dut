@@ -5,6 +5,7 @@ const path = require("path");
 const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
+const bcrypt = require('bcryptjs');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -43,13 +44,14 @@ const db = new sqlite3.Database(dbPath, (err) => {
 
 // Create tables
 db.serialize(() => {
-  // Users table
+  // Users table (now stores password_hash)
   db.run(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       student_id TEXT UNIQUE NOT NULL,
       name TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
+      password_hash TEXT,
       role TEXT DEFAULT 'student',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -113,21 +115,27 @@ db.serialize(() => {
     )
   `);
 
-  // Create default admin user
+  // Create default admin user with hashed password '1234'
   db.get("SELECT COUNT(*) as count FROM users WHERE role = 'teacher'", (err, row) => {
     if (!err && row.count === 0) {
-      db.run(`
-        INSERT INTO users (student_id, name, email, role) 
-        VALUES ('ADMIN001', 'Admin Teacher', 'admin@dut.ac.za', 'teacher')
-      `, (err) => {
-        if (!err) {
-          console.log("✅ Default admin user created");
+      const adminPassword = '1234';
+      const hash = bcrypt.hashSync(adminPassword, 10);
+      db.run(
+        `INSERT INTO users (student_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`,
+        ['admindut', 'Admin DUT', 'admindut@dut4life.ac.za', hash, 'teacher'],
+        (err) => {
+          if (!err) {
+            console.log("\u2705 Default admin user created (student_id: admindut, password: 1234)");
+          } else {
+            console.error("\u274c Failed to create default admin user:", err && err.message);
+          }
         }
-      });
+      );
     }
   });
-});
 
+});
+// Routes
 // Routes
 
 // Health check
@@ -140,11 +148,15 @@ app.get("/", (req, res) => {
 
 // Authentication routes
 app.post("/api/auth/login", (req, res) => {
-  const { email, studentId } = req.body;
-  
+  const { email, studentId, password } = req.body;
+
+  if (!password) {
+    return res.status(400).json({ error: 'Password is required' });
+  }
+
   let query = "SELECT * FROM users WHERE ";
   let params = [];
-  
+
   if (email) {
     query += "email = ?";
     params.push(email);
@@ -154,33 +166,42 @@ app.post("/api/auth/login", (req, res) => {
   } else {
     return res.status(400).json({ error: "Email or student ID required" });
   }
-  
+
   db.get(query, params, (err, user) => {
     if (err) {
-      res.status(500).json({ error: err.message });
-    } else if (!user) {
-      res.status(404).json({ error: "User not found" });
-    } else {
-      // Remove sensitive data and return user
-      const { ...userData } = user;
-      res.json({ 
-        user: userData,
-        token: `mock_token_${user.id}` // In production, use JWT
-      });
+      return res.status(500).json({ error: err.message });
     }
+    if (!user) {
+      return res.status(404).json({ error: "User not found" });
+    }
+
+    const hash = user.password_hash;
+    if (!hash) {
+      return res.status(400).json({ error: 'User has no password set' });
+    }
+
+    const valid = bcrypt.compareSync(password, hash);
+    if (!valid) {
+      return res.status(401).json({ error: 'Invalid credentials' });
+    }
+
+    const { password_hash, ...userData } = user;
+    res.json({ user: userData, token: `mock_token_${user.id}` });
   });
 });
 
 app.post("/api/auth/register", (req, res) => {
-  const { studentId, name, email, role = 'student' } = req.body;
-  
-  if (!studentId || !name || !email) {
-    return res.status(400).json({ error: "Student ID, name, and email are required" });
+  const { studentId, name, email, password, role = 'student' } = req.body;
+
+  if (!studentId || !name || !email || !password) {
+    return res.status(400).json({ error: "Student ID, name, email and password are required" });
   }
-  
+
+  const hash = bcrypt.hashSync(password, 10);
+
   db.run(
-    `INSERT INTO users (student_id, name, email, role) VALUES (?, ?, ?, ?)`,
-    [studentId, name, email, role],
+    `INSERT INTO users (student_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`,
+    [studentId, name, email, hash, role],
     function (err) {
       if (err) {
         if (err.message.includes('UNIQUE constraint failed')) {
@@ -234,22 +255,37 @@ app.post("/api/faces/enroll", upload.single('image'), (req, res) => {
   if (!user_id || !embedding) {
     return res.status(400).json({ error: "User ID and embedding are required" });
   }
-  
-  db.run(
-    `INSERT INTO face_embeddings (user_id, embedding, image_path, confidence) VALUES (?, ?, ?, ?)`,
-    [user_id, embedding, image_path, confidence],
-    function (err) {
+  // Enforce per-user maximum embeddings (10 by policy)
+  db.get(
+    `SELECT COUNT(*) as count FROM face_embeddings WHERE user_id = ?`,
+    [user_id],
+    (err, row) => {
       if (err) {
-        res.status(400).json({ error: err.message });
-      } else {
-        res.json({
-          id: this.lastID,
-          user_id: parseInt(user_id),
-          embedding,
-          image_path,
-          confidence: parseFloat(confidence)
-        });
+        return res.status(500).json({ error: err.message });
       }
+      const existing = row?.count || 0;
+      const MAX_PER_USER = 10;
+      if (existing >= MAX_PER_USER) {
+        return res.status(400).json({ error: `Embedding limit reached: user already has ${existing} embeddings (max ${MAX_PER_USER})` });
+      }
+
+      db.run(
+        `INSERT INTO face_embeddings (user_id, embedding, image_path, confidence) VALUES (?, ?, ?, ?)`,
+        [user_id, embedding, image_path, confidence],
+        function (err) {
+          if (err) {
+            res.status(400).json({ error: err.message });
+          } else {
+            res.json({
+              id: this.lastID,
+              user_id: parseInt(user_id),
+              embedding,
+              image_path,
+              confidence: parseFloat(confidence)
+            });
+          }
+        }
+      );
     }
   );
 });

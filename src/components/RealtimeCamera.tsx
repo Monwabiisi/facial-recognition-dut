@@ -351,6 +351,8 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
                 onClick={async () => {
                   const v = videoRef.current;
                   if (!v) return;
+                  const MAX_PER_USER = 10;
+
                   const captureOne = () => {
                     const tmp = document.createElement('canvas');
                     const w = v.videoWidth || width;
@@ -363,9 +365,21 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
                     return tmp.toDataURL('image/jpeg', 0.9);
                   };
 
-                  if (burstCount && burstCount > 1) {
+                  const capped = Math.max(1, Math.min(burstCount || 1, MAX_PER_USER));
+                  const already = faceDescriptors.length || 0;
+                  const remaining = Math.max(0, MAX_PER_USER - already);
+
+                  if (remaining <= 0) {
+                    setStatus('Embedding limit reached for this user');
+                    onFaceEnrolled?.(false);
+                    return;
+                  }
+
+                  if (capped && capped > 1) {
                     const results: string[] = [];
-                    for (let i = 0; i < burstCount; i++) {
+                    // Only capture up to the remaining allowed count
+                    const toCapture = Math.min(capped, remaining);
+                    for (let i = 0; i < toCapture; i++) {
                       const dataUrl = captureOne();
                       if (dataUrl) results.push(dataUrl);
                       // small delay between captures to allow slight variation

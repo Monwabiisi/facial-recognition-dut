@@ -17,6 +17,7 @@ interface EnrollmentData {
   name: string;
   studentId: string;
   email: string;
+  capturedPhotos: string[]; // base64 encoded photos
 }
 
 export default function CameraPage() {
@@ -30,7 +31,8 @@ export default function CameraPage() {
   const [enrollmentData, setEnrollmentData] = useState<EnrollmentData>({
     name: '',
     studentId: '',
-    email: ''
+    email: '',
+    capturedPhotos: []
   });
   const [enrollmentStep, setEnrollmentStep] = useState<'form' | 'capture'>('form');
   const [sessionStats, setSessionStats] = useState({
@@ -38,6 +40,9 @@ export default function CameraPage() {
     unknown: 0,
     avgConfidence: 0
   });
+  const [engineStatus, setEngineStatus] = useState<{ initialized: boolean; backend: string; message?: string } | null>(null);
+  const [captureDisabledReason, setCaptureDisabledReason] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -77,28 +82,44 @@ export default function CameraPage() {
     setFaceCount(faces.length);
     setIsScanning(faces.length > 0);
     
-    if (faces.length === 1 && mode === 'recognize') {
-      // Simulate recognition process
-      setTimeout(() => {
-        const mockResult: RecognitionResult = {
-          name: 'John Doe',
-          studentId: 'DUT12345',
-          confidence: 92.5,
-          timestamp: new Date()
-        };
-        
-        setCurrentRecognition(mockResult);
-        setRecognitionResults(prev => [mockResult, ...prev.slice(0, 9)]);
-        setSessionStats(prev => ({
-          recognized: prev.recognized + 1,
-          unknown: prev.unknown,
-          avgConfidence: (prev.avgConfidence + mockResult.confidence) / 2
-        }));
-        
-        playSound('success');
-      }, 1500);
+    // Store faces data for enrollment
+    if (faces.length === 1) {
+      // For recognition mode
+      if (mode === 'recognize') {
+        // Simulate recognition process
+        setTimeout(() => {
+          const mockResult: RecognitionResult = {
+            name: 'John Doe',
+            studentId: 'DUT12345',
+            confidence: 92.5,
+            timestamp: new Date()
+          };
+          
+          setCurrentRecognition(mockResult);
+          setRecognitionResults(prev => [mockResult, ...prev.slice(0, 9)]);
+          setSessionStats(prev => ({
+            recognized: prev.recognized + 1,
+            unknown: prev.unknown,
+            avgConfidence: (prev.avgConfidence + mockResult.confidence) / 2
+          }));
+          
+          playSound('success');
+        }, 1500);
+      }
+      // For enrollment mode
+      else if (mode === 'enroll' && enrollmentStep === 'capture') {
+        // The face is ready to be captured
+        setIsScanning(true);
+      }
+    } else {
+      setIsScanning(false);
     }
-  }, [mode, playSound]);
+  }, [mode, playSound, enrollmentStep]);
+
+  const handleEngineStatus = useCallback((s: { initialized: boolean; backend: string; message?: string }) => {
+    setEngineStatus(s);
+    console.info('Engine status:', s);
+  }, []);
 
   const startEnrollment = () => {
     if (!enrollmentData.name || !enrollmentData.studentId || !enrollmentData.email) {
@@ -108,13 +129,76 @@ export default function CameraPage() {
   };
 
   const handleEnrollmentCapture = () => {
-    // Simulate enrollment process
-    setTimeout(() => {
+    if (!canvasRef.current || !isActive || !isScanning) {
+      alert("Please ensure your face is properly detected before capturing");
+      return;
+    }
+
+    if (enrollmentData.capturedPhotos.length >= 6) {
+      alert("Maximum number of photos (6) has been reached");
+      return;
+    }
+
+    const context = canvasRef.current.getContext('2d');
+    if (!context) return;
+
+    // Capture the current frame
+    const video = document.querySelector('video');
+    if (!video) return;
+
+    canvasRef.current.width = video.videoWidth;
+    canvasRef.current.height = video.videoHeight;
+    context.drawImage(video, 0, 0, video.videoWidth, video.videoHeight);
+
+    // Convert to base64
+    const photo = canvasRef.current.toDataURL('image/jpeg');
+    
+    setEnrollmentData(prev => ({
+      ...prev,
+      capturedPhotos: [...prev.capturedPhotos, photo]
+    }));
+
+    playSound('success');
+
+    // If we have 6 photos, automatically trigger completion
+    if (enrollmentData.capturedPhotos.length === 5) {
+      setTimeout(() => {
+        completeEnrollment();
+      }, 500);
+    }
+  };
+
+  const completeEnrollment = () => {
+    // Validation
+    if (enrollmentData.capturedPhotos.length < 6) {
+      alert("Please capture all 6 required photos before completing enrollment");
+      return;
+    }
+
+    // Here you would normally send the data to your backend
+    try {
+      // TODO: Send enrollment data to backend
+      
+      // Reset the form and show success message
       setEnrollmentStep('form');
-      setEnrollmentData({ name: '', studentId: '', email: '' });
-      playSound('success');
-      alert(`✅ Successfully enrolled ${enrollmentData.name}!`);
-    }, 2000);
+      setEnrollmentData({
+        name: '',
+        studentId: '',
+        email: '',
+        capturedPhotos: []
+      });
+      alert(`✅ Successfully enrolled ${enrollmentData.name} with ${enrollmentData.capturedPhotos.length} photos!`);
+    } catch (error) {
+      alert("Failed to complete enrollment. Please try again.");
+      console.error("Enrollment error:", error);
+    }
+  };
+
+  const deletePhoto = (index: number) => {
+    setEnrollmentData(prev => ({
+      ...prev,
+      capturedPhotos: prev.capturedPhotos.filter((_, i) => i !== index)
+    }));
   };
 
   const toggleCamera = () => {
@@ -175,23 +259,19 @@ export default function CameraPage() {
           value={sessionStats.recognized}
           label="Recognized Today"
           color="green"
-          animated
         />
         
         <StatsCard
           icon="❓"
           value={sessionStats.unknown}
           label="Unknown Faces"
-          color="orange"
-          animated
+          color="gold"
         />
         
         <StatsCard
           icon="🎯"
           value={`${sessionStats.avgConfidence.toFixed(1)}%`}
-          label="Avg Confidence"
           color="blue"
-          animated
         />
       </div>
 
@@ -217,7 +297,7 @@ export default function CameraPage() {
               <Camera
                 onFaceDetected={handleFaceDetected}
                 isActive={isActive}
-                engine="mediapipe"
+                onEngineStatus={handleEngineStatus}
               />
               
               {/* Face Detection Overlay */}
@@ -243,20 +323,89 @@ export default function CameraPage() {
                     <h3 className="text-xl font-bold text-white mb-2">
                       Enrolling: {enrollmentData.name}
                     </h3>
-                    <p className="text-gray-300 mb-6">
-                      Position your face in the center and look directly at the camera
-                    </p>
+                    <div className="mb-4">
+                      <p className="text-cyan-400 font-mono">
+                        {enrollmentData.capturedPhotos.length}/6 photos captured
+                      </p>
+                      {enrollmentData.capturedPhotos.length < 6 && (
+                        <p className="text-gray-300 text-sm mt-1">
+                          Position your face in the center and look directly at the camera
+                        </p>
+                      )}
+                    </div>
+
+                    {/* Captured Photos Grid */}
+                    {enrollmentData.capturedPhotos.length > 0 && (
+                      <div className="grid grid-cols-3 gap-2 mb-4">
+                        {enrollmentData.capturedPhotos.map((photo, index) => (
+                          <div key={index} className="relative group">
+                            <img
+                              src={photo}
+                              alt={`Capture ${index + 1}`}
+                              className="w-full h-20 object-cover rounded-lg border border-white/10"
+                            />
+                            <button
+                              onClick={() => deletePhoto(index)}
+                              className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                            >
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                              </svg>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
-                      <CyberButton
-                        variant="primary"
-                        onClick={handleEnrollmentCapture}
-                        disabled={faceCount !== 1}
-                      >
-                        📸 Capture Face
-                      </CyberButton>
+                      <div className="flex items-center gap-3">
+                        <CyberButton
+                          variant="primary"
+                          onClick={() => {
+                            if (!isActive) {
+                              console.warn('Capture attempted but camera inactive');
+                              setCaptureDisabledReason('Camera inactive');
+                              return;
+                            }
+                            if (faceCount === 0) {
+                              console.warn('Capture attempted but no face detected');
+                              setCaptureDisabledReason('No face detected');
+                              return;
+                            }
+                            if (enrollmentData.capturedPhotos.length >= 6) {
+                              console.warn('Capture attempted but limit reached');
+                              setCaptureDisabledReason('Maximum photos reached');
+                              return;
+                            }
+
+                            // Clear any previous reason and proceed
+                            setCaptureDisabledReason(null);
+                            handleEnrollmentCapture();
+                          }}
+                          disabled={!isActive || faceCount === 0 || enrollmentData.capturedPhotos.length >= 6}
+                        >
+                          📸 Capture Face ({6 - enrollmentData.capturedPhotos.length} remaining)
+                        </CyberButton>
+                        {captureDisabledReason && (
+                          <div className="text-sm text-yellow-300 font-mono">{captureDisabledReason}</div>
+                        )}
+                      </div>
+                      {enrollmentData.capturedPhotos.length > 0 && (
+                        <CyberButton
+                          variant="success"
+                          onClick={completeEnrollment}
+                        >
+                          ✅ Complete
+                        </CyberButton>
+                      )}
                       <CyberButton
                         variant="ghost"
-                        onClick={() => setEnrollmentStep('form')}
+                        onClick={() => {
+                          if (window.confirm('Are you sure? This will discard all captured photos.')) {
+                            setEnrollmentStep('form');
+                            setEnrollmentData(prev => ({ ...prev, capturedPhotos: [] }));
+                          }
+                        }}
                       >
                         Cancel
                       </CyberButton>
@@ -428,8 +577,8 @@ export default function CameraPage() {
               <div className="flex items-center justify-between">
                 <span className="text-gray-300 text-sm">AI Model</span>
                 <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-green-400 rounded-full animate-cyber-pulse"></div>
-                  <span className="text-green-400 font-mono text-sm">LOADED</span>
+                  <div className={`w-2 h-2 rounded-full ${engineStatus?.initialized ? 'bg-green-400 animate-cyber-pulse' : 'bg-gray-500'}`}></div>
+                  <span className={`${engineStatus?.initialized ? 'text-green-400' : 'text-gray-400'} font-mono text-sm`}>{engineStatus?.backend ? engineStatus.backend.toUpperCase() : 'N/A'} {engineStatus?.message ? `- ${engineStatus.message}` : ''}</span>
                 </div>
               </div>
               
@@ -497,8 +646,9 @@ export default function CameraPage() {
         </div>
       </div>
 
-      {/* Hidden audio element for sound effects */}
+      {/* Hidden elements */}
       <audio ref={audioRef} style={{ display: 'none' }} />
+      <canvas ref={canvasRef} style={{ display: 'none' }} />
     </div>
   );
 }

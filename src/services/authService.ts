@@ -20,12 +20,14 @@ export interface RegisterData {
   studentId: string;
   name: string;
   email: string;
+  password: string;
   role?: 'student' | 'teacher';
 }
 
 export interface LoginData {
   email?: string;
   studentId?: string;
+  password?: string;
 }
 
 class AuthService {
@@ -73,7 +75,7 @@ class AuthService {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+  body: JSON.stringify(data),
       });
 
       if (!response.ok) {
@@ -116,7 +118,7 @@ class AuthService {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(data),
+  body: JSON.stringify(data),
       });
 
       if (!response.ok) {
