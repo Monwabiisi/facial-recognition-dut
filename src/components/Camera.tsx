@@ -108,15 +108,13 @@ export const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, engi
 
   return (
     <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-900">
-      {cameraReady && (
-        <video
-          ref={videoRef}
-          autoPlay
-          playsInline
-          muted
-          className="w-full h-full object-cover"
-        />
-      )}
+      <video
+        ref={videoRef}
+        autoPlay
+        playsInline
+        muted
+        className="w-full h-full object-cover"
+      />
       
       {/* Loading indicator */}
       {!isInitialized && (

@@ -5,9 +5,12 @@
 
 @layer base {
   :root {
-    --primary: 0 102 204;
-    --secondary: 45 55 72;
-    --accent: 0 171 179;
+  --primary: 59 130 246; /* blue-500 */
+  --primary-600: 37 99 235;
+  --secondary: 17 24 39; /* gray-900 */
+  --accent: 234 88 12; /* orange-500 */
+  --card-bg: 255 255 255;
+  --glass: 255 255 255 / 0.06;
   }
 
   html {
@@ -18,15 +21,27 @@
 
 @layer components {
   .btn-primary {
-    @apply bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-dark transition-colors duration-200;
+    background-color: rgb(var(--primary));
+    color: white;
+    padding: .65rem 1rem;
+    border-radius: .6rem;
+    box-shadow: 0 6px 18px rgba(59,130,246,0.18);
+    transition: transform .12s ease, box-shadow .12s ease;
   }
 
+  .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 10px 26px rgba(59,130,246,0.22); }
+
+  .btn-ghost { background: transparent; color: rgb(var(--secondary)); padding: .5rem .75rem; border-radius: .5rem; }
+  
   .input-primary {
     @apply w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent;
   }
 
   .card {
-    @apply bg-white rounded-lg shadow-sm p-6;
+  background: rgb(var(--card-bg));
+  border-radius: .75rem;
+  box-shadow: 0 8px 30px rgba(2,6,23,0.08);
+  padding: 1rem;
   }
 }
 

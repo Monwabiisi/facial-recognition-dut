@@ -72,8 +72,8 @@ export default defineConfig(({ command, mode }): UserConfig => {
       host: true,
       port: 5174,
       strictPort: true,
-      // Enable HTTPS in development for camera access
-      https: true,
+      // Use HTTP for development - camera access might be limited
+      https: false,
       headers: {
         'Cross-Origin-Embedder-Policy': 'require-corp',
         'Cross-Origin-Opener-Policy': 'same-origin',

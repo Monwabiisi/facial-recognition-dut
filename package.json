@@ -22,7 +22,6 @@
     "chart.js": "^4.5.0",
     "date-fns": "^4.1.0",
     "face-api.js": "^0.22.2",
-    "firebase": "^12.1.0",
     "papaparse": "^5.5.3",
     "react": "^18.2.0",
     "react-chartjs-2": "^5.3.0",
@@ -32,16 +31,46 @@
     "styled-components": "^6.1.1",
     "web-vitals": "^3.5.0"
   },
+  "devDependencies": {
+    "@babel/plugin-transform-runtime": "^7.28.3",
+    "@tailwindcss/aspect-ratio": "^0.4.2",
+    "@tailwindcss/forms": "^0.5.10",
+    "@tailwindcss/postcss": "^4.1.12",
+    "@tailwindcss/typography": "^0.5.16",
+    "@tensorflow/tfjs-node": "^4.22.0",
+    "@types/node": "^20.19.10",
+    "@vitejs/plugin-react": "^5.0.0",
+    "@vitest/coverage-v8": "^3.2.4",
+    "autoprefixer": "^10.4.21",
+    "babel-plugin-macros": "^3.1.0",
+    "canvas": "^3.1.2",
+    "concurrently": "^9.2.1",
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "jsdom": "^26.1.0",
+    "multer": "^1.4.5-lts.1",
+    "postcss": "^8.5.6",
+    "sqlite3": "^5.1.7",
+    "tailwindcss": "^3.4.17",
+    "tsx": "^4.20.3",
+    "typescript": "^5.9.2",
+    "vite": "^7.1.2",
+    "vite-plugin-pwa": "^1.0.2",
+    "vitest": "^3.2.4"
+  },
   "scripts": {
     "setup": "npm run models && npm run typecheck",
     "models": "bash scripts/get-models.sh",
     "typecheck": "tsc --noEmit",
-    "dev": "vite --port 5174",
+    "start": "vite",
     "build": "vite build",
     "preview": "vite preview --port 5175",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:ui": "vitest --ui"
+    "test:ui": "vitest --ui",
+    "server": "node server.js",
+    "dev": "concurrently \"npm run server\" \"npm run start\"",
+    "server:dev": "nodemon server.js"
   },
   "eslintConfig": {
     "extends": [
@@ -55,7 +84,7 @@
           "paths": [
             {
               "name": "firebase",
-              "message": "Import from 'firebase/<subpath>' (e.g., 'firebase/app', 'firebase/firestore'). Root import is not exported."
+              "message": "Use SQLite backend instead of Firebase"
             }
           ]
         }
@@ -73,27 +102,5 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
-  },
-  "devDependencies": {
-    "@babel/plugin-transform-runtime": "^7.28.3",
-    "@tailwindcss/aspect-ratio": "^0.4.2",
-    "@tailwindcss/forms": "^0.5.10",
-    "@tailwindcss/postcss": "^4.1.12",
-    "@tailwindcss/typography": "^0.5.16",
-    "@tensorflow/tfjs-node": "^4.22.0",
-    "@types/node": "^20.19.10",
-    "@vitejs/plugin-react": "^5.0.0",
-    "@vitest/coverage-v8": "^3.2.4",
-    "autoprefixer": "^10.4.21",
-    "babel-plugin-macros": "^3.1.0",
-    "canvas": "^3.1.2",
-    "jsdom": "^26.1.0",
-    "postcss": "^8.5.6",
-    "tailwindcss": "^3.4.17",
-    "tsx": "^4.20.3",
-    "typescript": "^5.9.2",
-    "vite": "^7.1.2",
-    "vite-plugin-pwa": "^1.0.2",
-    "vitest": "^3.2.4"
   }
 }

@@ -72,7 +72,8 @@ export function useCamera() {
 
       setReady(true);
     } catch (e: any) {
-      setError(e?.message || String(e));
+  console.debug('useCamera startStream error object:', e);
+  setError(e?.message || String(e));
       stopStream();
     }
   }, [stopStream]);

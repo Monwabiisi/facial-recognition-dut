@@ -1,0 +1,4 @@
+sqlalchemy
+fastapi
+passlib
+python-jose
