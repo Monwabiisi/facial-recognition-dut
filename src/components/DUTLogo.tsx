@@ -17,7 +17,7 @@ export default function DUTLogo({ size = 'md', animated = true, className = '' }
   return (
     <div className={`relative ${sizeClasses[size]} ${className}`}>
       {/* Main Logo Container */}
-      <div className={`relative ${sizeClasses[size]} ${animated ? 'floating' : ''}`}>
+      <div className={`relative ${sizeClasses[size]} ${animated ? 'animate-float' : ''}`}>
         {/* Outer Ring */}
         <div className="absolute inset-0 rounded-full border-2 border-cyan-400 animate-spin" style={{ animationDuration: '8s' }}>
           <div className="absolute top-0 left-1/2 w-1 h-1 bg-cyan-400 rounded-full transform -translate-x-1/2 -translate-y-1/2"></div>

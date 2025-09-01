@@ -60,7 +60,7 @@ export default function FaceDetectionOverlay({
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={`h-${i}`}
-              className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-30"
+              className="absolute w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-30 animate-scan"
               style={{
                 top: `${i * 10}%`,
                 animationDelay: `${i * 0.1}s`
@@ -72,7 +72,7 @@ export default function FaceDetectionOverlay({
           {Array.from({ length: 10 }).map((_, i) => (
             <div
               key={`v-${i}`}
-              className="absolute h-full w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent opacity-20"
+              className="absolute h-full w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent opacity-20 animate-scan"
               style={{
                 left: `${i * 10}%`,
                 animationDelay: `${i * 0.15}s`
@@ -89,8 +89,8 @@ export default function FaceDetectionOverlay({
             {/* Main Detection Box */}
             <div className={`absolute inset-0 border-2 rounded-lg transition-all duration-300 ${
               recognizedUser 
-                ? 'border-green-400 shadow-green-400/50' 
-                : 'border-cyan-400 shadow-cyan-400/50'
+                ? 'border-green-400 shadow-lg shadow-green-400/50' 
+                : 'border-cyan-400 shadow-lg shadow-cyan-400/50'
             }`}>
               {/* Corner Brackets */}
               <div className="absolute top-0 left-0 w-8 h-8 border-l-4 border-t-4 border-white"></div>
@@ -184,7 +184,9 @@ export default function FaceDetectionOverlay({
 
       {/* Data Stream Effect */}
       {isScanning && (
-        <div className="absolute top-0 left-0 w-full h-full data-stream opacity-30"></div>
+        <div className="absolute top-0 left-0 w-full h-full opacity-30">
+          <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-400/10 to-transparent animate-data-flow"></div>
+        </div>
       )}
     </div>
   );

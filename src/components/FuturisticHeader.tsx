@@ -7,7 +7,7 @@ import CyberButton from './CyberButton';
 export default function FuturisticHeader() {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  const { currentUser, logout } = useAuth();
+  const { user, logout } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -36,12 +36,12 @@ export default function FuturisticHeader() {
   return (
     <header className="fixed top-0 left-0 right-0 z-50 backdrop-blur-xl bg-black/20 border-b border-white/10">
       {/* Animated Background Grid */}
-      <div className="absolute inset-0 cyber-grid opacity-20"></div>
+      <div className="absolute inset-0 bg-cyber-grid opacity-20"></div>
       
       {/* Scan Line Effect */}
       <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-scan"></div>
       
-      <div className="container mx-auto px-4">
+      <div className="container-custom">
         <nav className="flex items-center justify-between py-4">
           
           {/* Logo Section */}
@@ -49,7 +49,7 @@ export default function FuturisticHeader() {
             <DUTLogo size="lg" animated />
             <div className="hidden md:block">
               <Link 
-                to={currentUser ? "/dashboard" : "/"}
+                to={user ? "/dashboard" : "/"}
                 className="text-xl font-bold text-cyber gradient-text hover:scale-105 transition-transform duration-300"
               >
                 DUT FACIAL RECOGNITION
@@ -62,7 +62,7 @@ export default function FuturisticHeader() {
 
           {/* Center Navigation */}
           <div className="hidden lg:flex items-center space-x-6">
-            {currentUser && (
+            {user && (
               <>
                 <Link
                   to="/dashboard"
@@ -106,27 +106,27 @@ export default function FuturisticHeader() {
               </div>
             </div>
 
-            {currentUser ? (
+            {user ? (
               <div className="flex items-center space-x-3">
                 {/* User Avatar */}
                 <div className="relative">
                   <div className="w-10 h-10 rounded-full bg-gradient-to-r from-cyan-400 to-purple-500 p-0.5 animate-glow">
                     <div className="w-full h-full rounded-full bg-black/50 flex items-center justify-center">
                       <span className="text-white font-bold text-sm">
-                        {currentUser.email?.[0]?.toUpperCase() || '?'}
+                        {user.name?.[0]?.toUpperCase() || user.email?.[0]?.toUpperCase() || '?'}
                       </span>
                     </div>
                   </div>
-                  <div className="status-online"></div>
+                  <div className="absolute -top-1 -right-1 w-4 h-4 bg-green-400 rounded-full border-2 border-black animate-cyber-pulse"></div>
                 </div>
 
                 {/* User Info */}
                 <div className="hidden md:block text-right">
                   <div className="text-white font-semibold text-sm">
-                    {currentUser.email}
+                    {user.name || user.email}
                   </div>
                   <div className="text-cyan-400 font-mono text-xs">
-                    AUTHENTICATED
+                    {user.role?.toUpperCase() || 'USER'}
                   </div>
                 </div>
 
@@ -175,7 +175,7 @@ export default function FuturisticHeader() {
         {isMenuOpen && (
           <div className="lg:hidden border-t border-white/10 py-4 animate-slide-down">
             <div className="space-y-3">
-              {currentUser && (
+              {user && (
                 <>
                   <Link
                     to="/dashboard"

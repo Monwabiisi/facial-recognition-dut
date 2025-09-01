@@ -91,11 +91,7 @@ export default function CyberButton({
       {/* Content */}
       <span className="relative flex items-center justify-center gap-2">
         {loading ? (
-          <div className="loading-dots">
-            <span></span>
-            <span></span>
-            <span></span>
-          </div>
+          <div className="loading-spinner"></div>
         ) : (
           <>
             {icon && <span className="flex-shrink-0">{icon}</span>}

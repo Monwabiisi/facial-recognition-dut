@@ -218,7 +218,9 @@ export default function AttendanceChart({ data, className = '' }: AttendanceChar
       </div>
 
       {/* Scan Line Effect */}
-      <div className="absolute top-0 left-0 w-full h-full scan-line opacity-20 pointer-events-none rounded-2xl"></div>
+      <div className="absolute top-0 left-0 w-full h-full opacity-20 pointer-events-none rounded-2xl overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-scan"></div>
+      </div>
     </div>
   );
 }

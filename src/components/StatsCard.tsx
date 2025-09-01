@@ -83,12 +83,14 @@ export default function StatsCard({
   };
 
   return (
-    <div className={`glass-card p-6 hover-lift hover-glow group cursor-pointer ${className}`}>
+    <div className={`stats-card hover-lift hover-glow group cursor-pointer ${className}`}>
       {/* Background Gradient */}
       <div className={`absolute inset-0 bg-gradient-to-br ${colorClasses[color]} opacity-10 rounded-2xl`}></div>
       
       {/* Scan Line */}
-      <div className="scan-line absolute top-0 left-0 w-full h-full rounded-2xl"></div>
+      <div className="absolute top-0 left-0 w-full h-full rounded-2xl overflow-hidden">
+        <div className="absolute top-0 left-0 w-full h-0.5 bg-gradient-to-r from-transparent via-white/30 to-transparent animate-scan"></div>
+      </div>
       
       {/* Content */}
       <div className="relative z-10">
@@ -122,7 +124,7 @@ export default function StatsCard({
         </div>
 
         {/* Holographic Overlay */}
-        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 holographic"></div>
+        <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 animate-holographic"></div>
       </div>
 
       {/* Corner Indicators */}
@@ -132,4 +134,8 @@ export default function StatsCard({
       <div className="absolute bottom-2 right-2 w-3 h-3 border-r-2 border-b-2 border-cyan-400/50 group-hover:border-cyan-400 transition-colors"></div>
     </div>
   );
-}
+});
+
+CyberInput.displayName = 'CyberInput';
+
+export default CyberInput;

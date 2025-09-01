@@ -1,12 +1,18 @@
-// src/contexts/AuthContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import authService, { User, AuthResponse, RegisterData, LoginData } from '../services/authService';
+
+interface User {
+  id: number;
+  name: string;
+  email: string;
+  studentId?: string;
+  role: 'student' | 'teacher' | 'admin';
+}
 
 interface AuthContextType {
   user: User | null;
   loading: boolean;
-  login: (data: LoginData) => Promise<void>;
-  register: (data: RegisterData) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string, studentId?: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isTeacher: boolean;
@@ -23,55 +29,69 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Initialize auth state on component mount
   useEffect(() => {
-    const initializeAuth = () => {
+    // Check for existing session
+    const savedUser = localStorage.getItem('dut_user');
+    if (savedUser) {
       try {
-        const currentUser = authService.getCurrentUser();
-        if (currentUser && authService.isAuthenticated()) {
-          setUser(currentUser);
-        }
+        setUser(JSON.parse(savedUser));
       } catch (error) {
-        console.error('Error initializing auth:', error);
-        // Clear potentially corrupted data
-        authService.logout();
-      } finally {
-        setLoading(false);
+        localStorage.removeItem('dut_user');
       }
-    };
-
-    initializeAuth();
+    }
+    setLoading(false);
   }, []);
 
-  const login = async (data: LoginData): Promise<void> => {
+  const login = async (email: string, password: string): Promise<void> => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const authResponse: AuthResponse = await authService.login(data);
-      setUser(authResponse.user);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1500));
+      
+      // Mock user data
+      const mockUser: User = {
+        id: 1,
+        name: 'John Doe',
+        email: email,
+        studentId: 'DUT12345',
+        role: email.includes('teacher') ? 'teacher' : 'student'
+      };
+      
+      setUser(mockUser);
+      localStorage.setItem('dut_user', JSON.stringify(mockUser));
     } catch (error) {
-      console.error('Login failed:', error);
-      throw error;
+      throw new Error('Login failed');
     } finally {
       setLoading(false);
     }
   };
 
-  const register = async (data: RegisterData): Promise<void> => {
+  const register = async (name: string, email: string, password: string, studentId?: string): Promise<void> => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const authResponse: AuthResponse = await authService.register(data);
-      setUser(authResponse.user);
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      const mockUser: User = {
+        id: Date.now(),
+        name,
+        email,
+        studentId,
+        role: 'student'
+      };
+      
+      setUser(mockUser);
+      localStorage.setItem('dut_user', JSON.stringify(mockUser));
     } catch (error) {
-      console.error('Registration failed:', error);
-      throw error;
+      throw new Error('Registration failed');
     } finally {
       setLoading(false);
     }
   };
 
   const logout = (): void => {
-    authService.logout();
     setUser(null);
+    localStorage.removeItem('dut_user');
   };
 
   const contextValue: AuthContextType = {

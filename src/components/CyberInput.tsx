@@ -54,9 +54,9 @@ const CyberInput = forwardRef<HTMLInputElement, CyberInputProps>(({
   const getVariantClasses = () => {
     switch (variant) {
       case 'error':
-        return 'border-red-400 focus:border-red-400 error-glow';
+        return 'border-red-400 focus:border-red-400';
       case 'success':
-        return 'border-green-400 focus:border-green-400 success-glow';
+        return 'border-green-400 focus:border-green-400';
       default:
         return 'border-white/20 focus:border-cyan-400 hover:border-white/30';
     }

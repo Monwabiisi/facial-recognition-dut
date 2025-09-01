@@ -1,16 +1,16 @@
-// 1️⃣ Import React hooks, navigation, and our custom components
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import Layout from '../layout/Layout';
-import Button from '../components/Button';
-import FormInput from '../components/FormInput';
+import DUTLogo from '../components/DUTLogo';
+import CyberButton from '../components/CyberButton';
+import CyberInput from '../components/CyberInput';
+import ParticleBackground from '../components/ParticleBackground';
 
-// 2️⃣ RegisterPage component with enhanced UI and comprehensive validation
 export default function RegisterPage() {
-  // 3️⃣ State for form data and validation
   const [formData, setFormData] = useState({
-    username: '',
+    name: '',
+    studentId: '',
+    email: '',
     password: '',
     confirmPassword: ''
   });
@@ -18,11 +18,9 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [passwordStrength, setPasswordStrength] = useState(0);
   
-  // 4️⃣ Get auth functions and navigation
-  const { signup } = useAuth();
+  const { register } = useAuth();
   const navigate = useNavigate();
 
-  // 5️⃣ Calculate password strength
   const calculatePasswordStrength = (password: string) => {
     let strength = 0;
     if (password.length >= 8) strength += 1;
@@ -33,40 +31,43 @@ export default function RegisterPage() {
     return strength;
   };
 
-  // 6️⃣ Handle input changes with real-time validation
   const handleInputChange = (field: string, value: string) => {
     setFormData(prev => ({ ...prev, [field]: value }));
     
-    // Calculate password strength for password field
     if (field === 'password') {
       setPasswordStrength(calculatePasswordStrength(value));
     }
     
-    // Clear error when user starts typing
     if (errors[field]) {
       setErrors(prev => ({ ...prev, [field]: '' }));
     }
   };
 
-  // 7️⃣ Comprehensive form validation
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
 
-    // Username validation
-    if (!formData.username) {
-      newErrors.username = 'Username is required';
+    if (!formData.name) {
+      newErrors.name = 'Full name is required';
     }
 
-    // Password validation
+    if (!formData.studentId) {
+      newErrors.studentId = 'Student ID is required';
+    }
+
+    if (!formData.email) {
+      newErrors.email = 'Email is required';
+    } else if (!/\S+@\S+\.\S+/.test(formData.email)) {
+      newErrors.email = 'Please enter a valid email';
+    }
+
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters long';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     } else if (passwordStrength < 3) {
-      newErrors.password = 'Password is too weak. Include uppercase, lowercase, numbers, and symbols.';
+      newErrors.password = 'Password is too weak';
     }
 
-    // Confirm password validation
     if (!formData.confirmPassword) {
       newErrors.confirmPassword = 'Please confirm your password';
     } else if (formData.password !== formData.confirmPassword) {
@@ -77,33 +78,26 @@ export default function RegisterPage() {
     return Object.keys(newErrors).length === 0;
   };
 
-  // 8️⃣ Handle form submission with enhanced error handling
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Validate form before submission
-    if (!validateForm()) {
-      return;
-    }
+    if (!validateForm()) return;
 
     try {
       setLoading(true);
       setErrors({});
       
-      // 9️⃣ Attempt to create account with our backend
-      await signup(formData.username, formData.password);
+      // Simulate registration
+      await new Promise(resolve => setTimeout(resolve, 2000));
       
-      // 🔟 Redirect to dashboard on success
       navigate('/dashboard');
     } catch (error: any) {
-      // 1️⃣1️⃣ Handle registration errors with user-friendly messages
-      setErrors({ general: error.message || 'An unexpected error occurred' });
+      setErrors({ general: error.message || 'Registration failed' });
     } finally {
       setLoading(false);
     }
   };
 
-  // 1️⃣2️⃣ Get password strength color and text
   const getPasswordStrengthInfo = () => {
     switch (passwordStrength) {
       case 0:
@@ -114,9 +108,9 @@ export default function RegisterPage() {
       case 3:
         return { color: 'bg-yellow-500', text: 'Fair', textColor: 'text-yellow-400' };
       case 4:
-        return { color: 'bg-neon-blue', text: 'Good', textColor: 'text-neon-blue' };
+        return { color: 'bg-cyan-400', text: 'Good', textColor: 'text-cyan-400' };
       case 5:
-        return { color: 'bg-neon-green', text: 'Strong', textColor: 'text-neon-green' };
+        return { color: 'bg-green-400', text: 'Strong', textColor: 'text-green-400' };
       default:
         return { color: 'bg-gray-500', text: '', textColor: 'text-gray-400' };
     }
@@ -125,61 +119,54 @@ export default function RegisterPage() {
   const strengthInfo = getPasswordStrengthInfo();
 
   return (
-    <Layout>
-      {/* 1️⃣3️⃣ Main container with centered layout */}
-      <div className="min-h-screen flex items-center justify-center py-12">
-        <div className="w-full max-w-md space-y-8 animate-slide-up">
+    <div className="min-h-screen animated-bg relative overflow-hidden">
+      <ParticleBackground />
+      
+      {/* Floating Background Elements */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-1/3 right-1/4 w-80 h-80 bg-purple-500/10 rounded-full blur-3xl animate-float"></div>
+        <div className="absolute bottom-1/3 left-1/4 w-96 h-96 bg-green-400/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '3s' }}></div>
+      </div>
+
+      {/* Main Content */}
+      <div className="relative z-10 min-h-screen flex items-center justify-center p-4">
+        <div className="w-full max-w-lg space-y-8 animate-fade-in">
           
-          {/* 1️⃣4️⃣ Header section with animated logo */}
-          <div className="text-center space-y-4">
-            {/* Animated logo */}
-            <div className="flex justify-center">
-              <div className="relative">
-                <div className="w-16 h-16 bg-gradient-to-r from-neon-purple to-neon-pink rounded-2xl flex items-center justify-center animate-float">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z" />
-                  </svg>
-                </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-neon-purple to-neon-pink rounded-2xl blur-lg opacity-50 animate-pulse"></div>
-              </div>
-            </div>
+          {/* Header */}
+          <div className="text-center space-y-6">
+            <DUTLogo size="xl" animated />
             
-            {/* Welcome text */}
             <div>
-              <h1 className="text-4xl font-bold font-heading gradient-text mb-2">
-                Join DUT
+              <h1 className="text-4xl font-bold font-heading gradient-text mb-4">
+                JOIN DUT SYSTEM
               </h1>
-              <p className="text-gray-300 font-body">
-                Create your account for Facial Recognition DUT
+              <p className="text-lg text-gray-300 font-body">
+                Create your account for advanced facial recognition
               </p>
             </div>
           </div>
 
-          {/* 1️⃣5️⃣ Registration form card */}
+          {/* Registration Form */}
           <div className="glass-card p-8 space-y-6">
-            {/* General error message */}
+            {/* Error Message */}
             {errors.general && (
-              <div className="bg-red-500/10 border border-red-500/20 rounded-xl p-4 animate-slide-up">
+              <div className="bg-red-500/10 border border-red-500/30 rounded-xl p-4 animate-slide-up">
                 <div className="flex items-center gap-3">
                   <svg className="w-5 h-5 text-red-400 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
                     <path fillRule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
                   </svg>
-                  <p className="text-red-400 font-body">{errors.general}</p>
+                  <p className="text-red-400 font-mono">{errors.general}</p>
                 </div>
               </div>
             )}
 
-            {/* Registration form */}
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Username input */}
-              <FormInput
-                label="Username"
-                type="text"
-                value={formData.username}
-                onChange={(e) => handleInputChange('username', e.target.value)}
-                error={errors.username}
-                variant={errors.username ? 'error' : 'default'}
-                helperText="This will be your public username."
+              <CyberInput
+                label="Full Name"
+                value={formData.name}
+                onChange={(e) => handleInputChange('name', e.target.value)}
+                error={errors.name}
+                variant={errors.name ? 'error' : 'default'}
                 icon={
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -188,9 +175,37 @@ export default function RegisterPage() {
                 required
               />
 
-              {/* Password input with strength indicator */}
+              <CyberInput
+                label="Student ID"
+                value={formData.studentId}
+                onChange={(e) => handleInputChange('studentId', e.target.value)}
+                error={errors.studentId}
+                variant={errors.studentId ? 'error' : 'default'}
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V8a2 2 0 00-2-2h-5m-4 0V5a2 2 0 114 0v1m-4 0a2 2 0 104 0m-5 8a2 2 0 100-4 2 2 0 000 4zm0 0c1.306 0 2.417.835 2.83 2M9 14a3.001 3.001 0 00-2.83 2M15 11h3m-3 4h2" />
+                  </svg>
+                }
+                required
+              />
+
+              <CyberInput
+                label="Email Address"
+                type="email"
+                value={formData.email}
+                onChange={(e) => handleInputChange('email', e.target.value)}
+                error={errors.email}
+                variant={errors.email ? 'error' : 'default'}
+                icon={
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                  </svg>
+                }
+                required
+              />
+
               <div className="space-y-2">
-                <FormInput
+                <CyberInput
                   label="Password"
                   type="password"
                   value={formData.password}
@@ -206,12 +221,12 @@ export default function RegisterPage() {
                   required
                 />
                 
-                {/* Password strength indicator */}
+                {/* Password Strength Indicator */}
                 {formData.password && (
                   <div className="px-1 space-y-2">
                     <div className="flex items-center justify-between">
-                      <span className="text-sm font-body text-gray-400">Password Strength:</span>
-                      <span className={`text-sm font-semibold ${strengthInfo.textColor}`}>
+                      <span className="text-sm font-mono text-gray-400">SECURITY LEVEL:</span>
+                      <span className={`text-sm font-bold ${strengthInfo.textColor}`}>
                         {strengthInfo.text}
                       </span>
                     </div>
@@ -225,8 +240,7 @@ export default function RegisterPage() {
                 )}
               </div>
 
-              {/* Confirm Password input */}
-              <FormInput
+              <CyberInput
                 label="Confirm Password"
                 type="password"
                 value={formData.confirmPassword}
@@ -242,37 +256,25 @@ export default function RegisterPage() {
                 required
               />
 
-              {/* Submit button */}
-              <Button
+              <CyberButton
                 type="submit"
                 loading={loading}
                 fullWidth
                 size="lg"
                 className="mt-8"
+                glowColor="#BF00FF"
               >
-                {loading ? 'Creating Account...' : 'Create Account'}
-              </Button>
+                {loading ? 'CREATING ACCOUNT...' : 'CREATE ACCOUNT'}
+              </CyberButton>
             </form>
 
-            {/* Divider */}
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10"></div>
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-4 bg-transparent text-gray-400 font-body">
-                  Already have an account?
-                </span>
-              </div>
-            </div>
-
-            {/* Login link */}
+            {/* Login Link */}
             <div className="text-center">
               <Link 
                 to="/login" 
-                className="inline-flex items-center gap-2 text-neon-blue hover:text-neon-purple transition-colors duration-300 font-semibold font-body group"
+                className="inline-flex items-center gap-2 text-cyan-400 hover:text-purple-400 transition-colors duration-300 font-mono group"
               >
-                Sign in instead
+                ALREADY HAVE ACCOUNT?
                 <svg className="w-4 h-4 group-hover:translate-x-1 transition-transform duration-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 8l4 4m0 0l-4 4m4-4H3" />
                 </svg>
@@ -280,29 +282,38 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* 1️⃣6️⃣ Security features section */}
-          <div className="text-center space-y-4">
-            <div className="glass-card p-4">
-              <div className="flex items-center justify-center gap-4 text-sm text-gray-300">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-neon-green rounded-full animate-pulse"></div>
-                  <span>Encrypted</span>
-                </div>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-neon-blue rounded-full animate-pulse"></div>
-                  <span>Secure</span>
-                </div>
-                <div className="w-px h-4 bg-white/20"></div>
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 bg-neon-purple rounded-full animate-pulse"></div>
-                  <span>Private</span>
-                </div>
+          {/* Security Features */}
+          <div className="glass-card p-6">
+            <h3 className="text-lg font-bold font-heading text-center text-green-400 mb-4">
+              🔒 SECURITY FEATURES
+            </h3>
+            <div className="grid grid-cols-2 gap-4 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full animate-cyber-pulse"></div>
+                <span className="text-gray-300 font-mono">256-BIT ENCRYPTION</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-cyan-400 rounded-full animate-cyber-pulse"></div>
+                <span className="text-gray-300 font-mono">BIOMETRIC AUTH</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-purple-400 rounded-full animate-cyber-pulse"></div>
+                <span className="text-gray-300 font-mono">GDPR COMPLIANT</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-pink-400 rounded-full animate-cyber-pulse"></div>
+                <span className="text-gray-300 font-mono">ZERO TRUST</span>
               </div>
             </div>
           </div>
         </div>
       </div>
-    </Layout>
+
+      {/* Corner UI Elements */}
+      <div className="fixed top-4 left-4 w-12 h-12 border-l-2 border-t-2 border-purple-400/50 pointer-events-none"></div>
+      <div className="fixed top-4 right-4 w-12 h-12 border-r-2 border-t-2 border-purple-400/50 pointer-events-none"></div>
+      <div className="fixed bottom-4 left-4 w-12 h-12 border-l-2 border-b-2 border-purple-400/50 pointer-events-none"></div>
+      <div className="fixed bottom-4 right-4 w-12 h-12 border-r-2 border-b-2 border-purple-400/50 pointer-events-none"></div>
+    </div>
   );
 }

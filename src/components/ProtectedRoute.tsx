@@ -1,88 +1,40 @@
-import { useState, useEffect, ReactNode } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
-import { User, onAuthStateChanged } from 'firebase/auth';
+import React, { ReactNode } from 'react';
+import { Navigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { Role } from '../utils/roles';
-import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../services/firebase';
 
-type State = 'loading' | 'ok' | 'deny' | 'error';
-
-async function getRoleFromFirestore(user: User | null): Promise<Role> {
-  if (!user) return 'unknown';
-  try {
-    const snapshot = await getDoc(doc(db, 'roles', user.uid));
-    if (!snapshot.exists()) return 'student'; // Default to student if no role set
-    const role = snapshot.data()?.role;
-    return role === 'teacher' ? 'teacher' : 'student';
-  } catch (error) {
-    console.error('Error fetching role:', error);
-    return 'unknown';
-  }
+interface ProtectedRouteProps {
+  children: ReactNode;
+  requireRole?: 'student' | 'teacher' | 'admin';
 }
 
-export default function ProtectedRoute({
-  children,
-  requireRole = 'teacher',
-}: {
-  children: ReactNode;
-  requireRole?: Role;
-}) {
-  const [state, setState] = useState<State>('loading');
-  const [user, setUser] = useState<User | null>(null);
+export default function ProtectedRoute({ children, requireRole }: ProtectedRouteProps) {
+  const { user, loading } = useAuth();
 
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-    });
-
-    return () => unsubscribe();
-  }, []);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const checkRole = async () => {
-      try {
-        const role = await getRoleFromFirestore(user);
-        
-        if (!mounted) return;
-
-        if (!user) {
-          setState('deny');
-        } else if (requireRole === 'teacher' && role !== 'teacher') {
-          setState('deny');
-        } else {
-          setState('ok');
-        }
-      } catch (error) {
-        console.error('Error in ProtectedRoute:', error);
-        if (mounted) setState('error');
-      }
-    };
-
-    checkRole();
-    return () => { mounted = false; };
-  }, [user, requireRole]);
-
-  if (state === 'loading') {
+  if (loading) {
     return (
-      <div className="flex items-center justify-center p-6">
-        <div className="text-gray-600">Checking permissions...</div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass-card p-8 text-center">
+          <div className="loading-spinner mx-auto mb-4"></div>
+          <p className="text-cyan-400 font-mono">Verifying access...</p>
+        </div>
       </div>
     );
   }
 
-  if (state === 'error') {
-    return (
-      <div className="flex items-center justify-center p-6">
-        <div className="text-red-600">Error checking permissions. Please try again later.</div>
-      </div>
-    );
-  }
-
-  if (state === 'deny') {
+  if (!user) {
     return <Navigate to="/login" replace />;
+  }
+
+  if (requireRole && user.role !== requireRole) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass-card p-8 text-center">
+          <div className="text-6xl mb-4">🚫</div>
+          <h2 className="text-2xl font-bold text-red-400 mb-2">Access Denied</h2>
+          <p className="text-gray-300">You don't have permission to access this page.</p>
+        </div>
+      </div>
+    );
   }
 
   return <>{children}</>;

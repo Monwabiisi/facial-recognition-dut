@@ -14,7 +14,7 @@ export default function FuturisticLayout({
   showParticles = true 
 }: FuturisticLayoutProps) {
   return (
-    <div className="min-h-screen bg-animated relative overflow-hidden">
+    <div className="min-h-screen animated-bg relative overflow-hidden">
       {/* Particle Background */}
       {showParticles && <ParticleBackground />}
       
@@ -22,7 +22,7 @@ export default function FuturisticLayout({
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {/* Floating Orbs */}
         <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-cyan-400/10 rounded-full blur-3xl animate-float"></div>
-        <div className="absolute top-3/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl floating-delayed"></div>
+        <div className="absolute top-3/4 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '2s' }}></div>
         <div className="absolute top-1/2 left-3/4 w-48 h-48 bg-green-400/10 rounded-full blur-3xl animate-float" style={{ animationDelay: '4s' }}></div>
         
         {/* Matrix Rain Effect */}
@@ -52,13 +52,13 @@ export default function FuturisticLayout({
       
       {/* Main Content */}
       <main className={`relative z-10 pt-20 ${className}`}>
-        <div className="container mx-auto px-4 py-6">
+        <div className="container-custom py-6">
           {children}
         </div>
       </main>
       
       {/* Cyber Grid Overlay */}
-      <div className="fixed inset-0 cyber-grid opacity-5 pointer-events-none z-0"></div>
+      <div className="fixed inset-0 bg-cyber-grid opacity-5 pointer-events-none z-0"></div>
       
       {/* Corner UI Elements */}
       <div className="fixed top-4 left-4 w-8 h-8 border-l-2 border-t-2 border-cyan-400/50 pointer-events-none z-40"></div>
