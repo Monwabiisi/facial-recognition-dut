@@ -72,8 +72,19 @@ export function useCamera() {
 
       setReady(true);
     } catch (e: any) {
-  console.debug('useCamera startStream error object:', e);
-  setError(e?.message || String(e));
+      console.error('Camera access error:', e);
+      
+      // Map common getUserMedia errors to user-friendly messages
+      if (e.name === 'NotAllowedError' || e.name === 'PermissionDeniedError') {
+        setError('Camera access denied. Please allow camera access and reload the page.');
+      } else if (e.name === 'NotFoundError' || e.name === 'DevicesNotFoundError') {
+        setError('No camera found. Please connect a camera and reload the page.');
+      } else if (e.name === 'NotReadableError' || e.name === 'TrackStartError') {
+        setError('Camera is in use by another application. Please close other apps using the camera.');
+      } else {
+        setError(e?.message || 'Failed to start camera. Please check permissions and try again.');
+      }
+      
       stopStream();
     }
   }, [stopStream]);

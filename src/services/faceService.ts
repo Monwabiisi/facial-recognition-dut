@@ -1,7 +1,7 @@
 // src/services/faceService.ts
 import authService from './authService';
 
-const API_BASE = 'http://localhost:5000/api';
+const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
 
 export interface FaceEmbedding {
   id: number;

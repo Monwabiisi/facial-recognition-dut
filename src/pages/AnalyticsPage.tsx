@@ -29,10 +29,22 @@ interface AnalyticsData {
 }
 
 export default function AnalyticsPage() {
-  const { user, isTeacher } = useAuth();
+  const { user, isTeacher, isAdmin } = useAuth();
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [selectedPeriod, setSelectedPeriod] = useState<'week' | 'month' | 'semester'>('month');
+
+  // Prevent students from accessing analytics
+  if (!isTeacher && !isAdmin) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-8">
+        <div className="glass-card p-10 text-center max-w-xl">
+          <h2 className="text-2xl font-bold mt-4">Access Restricted</h2>
+          <p className="mt-2 text-gray-300">Only teachers and administrators can view analytics.</p>
+        </div>
+      </div>
+    );
+  }
 
   useEffect(() => {
     loadAnalyticsData();

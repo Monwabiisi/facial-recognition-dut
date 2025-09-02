@@ -105,7 +105,6 @@ export default defineConfig(({ command, mode }): UserConfig => {
               'react',
               'react-dom',
               'react-router-dom',
-              'firebase/app',
               '@mediapipe/face_detection',
               '@mediapipe/face_mesh',
             ],
@@ -121,10 +120,7 @@ export default defineConfig(({ command, mode }): UserConfig => {
         "@mediapipe/face_mesh",
         "@mediapipe/camera_utils",
         "@vladmandic/human",
-        "face-api.js",
-        "firebase/app",
-        "firebase/auth",
-        "firebase/firestore",
+        "face-api.js"
       ],
     },
     // TypeScript configuration
@@ -140,12 +136,7 @@ export default defineConfig(({ command, mode }): UserConfig => {
       restoreMocks: true,
       coverage: { reporter: ['text', 'lcov'] },
       env: {
-        VITE_FIREBASE_API_KEY: 'mock_key',
-        VITE_FIREBASE_AUTH_DOMAIN: 'mock_domain',
-        VITE_FIREBASE_PROJECT_ID: 'mock_project_id',
-        VITE_FIREBASE_STORAGE_BUCKET: 'mock_bucket',
-        VITE_FIREBASE_MESSAGING_SENDER_ID: 'mock_sender_id',
-        VITE_FIREBASE_APP_ID: 'mock_app_id',
+        VITE_API_URL: 'http://localhost:5000',
       },
     },
   };

@@ -54,8 +54,9 @@ export default function LoginPage() {
       // Call real login
       await login(formData.email.toLowerCase(), formData.password);
 
-      // Role-based redirect: admin -> admin dashboard
-      const usersResp = await fetch('http://localhost:5000/api/users');
+  // Role-based redirect: admin -> admin dashboard
+  const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
+  const usersResp = await fetch(`${API_BASE}/users`);
       let role = '';
       if (usersResp.ok) {
         const usersList = await usersResp.json();
@@ -70,7 +71,7 @@ export default function LoginPage() {
       } else {
         // After login, check how many embeddings this user has and redirect to enrollment if < 10
         try {
-          const resp = await fetch('http://localhost:5000/api/faces');
+          const resp = await fetch(`${API_BASE}/faces`);
           if (resp.ok) {
             const all = await resp.json();
             const userEmail = formData.email.toLowerCase();

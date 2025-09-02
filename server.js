@@ -6,6 +6,7 @@ const cors = require("cors");
 const multer = require("multer");
 const fs = require("fs");
 const bcrypt = require('bcryptjs');
+const jwt = require('jsonwebtoken');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -158,10 +159,10 @@ app.post("/api/auth/login", (req, res) => {
   let params = [];
 
   if (email) {
-    query += "email = ?";
+    query += "email = ? AND role != 'deleted'";
     params.push(email);
   } else if (studentId) {
-    query += "student_id = ?";
+    query += "student_id = ? AND role != 'deleted'";
     params.push(studentId);
   } else {
     return res.status(400).json({ error: "Email or student ID required" });
@@ -186,7 +187,9 @@ app.post("/api/auth/login", (req, res) => {
     }
 
     const { password_hash, ...userData } = user;
-    res.json({ user: userData, token: `mock_token_${user.id}` });
+    // Generate a real JWT token
+    const token = jwt.sign({ id: user.id, role: user.role }, process.env.JWT_SECRET || 'your-secret-key', { expiresIn: '24h' });
+    res.json({ user: userData, token });
   });
 });
 
@@ -225,7 +228,7 @@ app.post("/api/auth/register", (req, res) => {
 
 // User routes
 app.get("/api/users", (req, res) => {
-  db.all("SELECT id, student_id, name, email, role, created_at FROM users", [], (err, rows) => {
+  db.all("SELECT id, student_id, name, email, role, created_at FROM users WHERE role != 'deleted'", [], (err, rows) => {
     if (err) {
       res.status(500).json({ error: err.message });
     } else {
@@ -314,11 +317,12 @@ app.post("/api/faces/recognize", upload.single('image'), (req, res) => {
     return res.status(400).json({ error: "Face embedding is required" });
   }
   
-  // Get all stored embeddings for comparison
+  // Get all stored embeddings for comparison from real users only
   const query = `
     SELECT fe.*, u.name, u.student_id, u.email 
     FROM face_embeddings fe 
     JOIN users u ON fe.user_id = u.id
+    WHERE u.student_id IN ('monwabisi', 'mogale') OR u.role = 'teacher'
   `;
   
   db.all(query, [], (err, rows) => {
@@ -326,20 +330,76 @@ app.post("/api/faces/recognize", upload.single('image'), (req, res) => {
       return res.status(500).json({ error: err.message });
     }
     
-    // In a real implementation, you'd compare embeddings here
-    // For now, we'll return a mock response
-    const mockMatch = rows.length > 0 ? {
-      ...rows[0],
-      similarity: 0.85,
-      recognized: true
-    } : {
-      recognized: false,
-      similarity: 0.0
-    };
+    // Compare embeddings with stored ones
+    let bestMatch = null;
+    let highestSimilarity = 0;
     
-    res.json(mockMatch);
+    for (const row of rows) {
+      let storedEmbedding = [];
+      try {
+        storedEmbedding = Array.isArray(row.embedding) ? row.embedding : JSON.parse(row.embedding);
+      } catch (e) {
+        // fallback if stored as string of numbers
+        storedEmbedding = (row.embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
+      }
+
+      let parsedEmbedding = [];
+      try {
+        parsedEmbedding = Array.isArray(embedding) ? embedding : JSON.parse(embedding);
+      } catch (e) {
+        parsedEmbedding = (embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
+      }
+
+      const similarity = cosineSimilarity(parsedEmbedding, storedEmbedding);
+      
+      if (similarity > threshold && similarity > highestSimilarity) {
+        highestSimilarity = similarity;
+        bestMatch = row;
+      }
+    }
+    
+    if (bestMatch) {
+      // Return the real user's information
+      res.json({
+        id: bestMatch.user_id,
+        name: bestMatch.name,
+        student_id: bestMatch.student_id,
+        similarity: highestSimilarity,
+        confidence: highestSimilarity * 100,
+        recognized: true
+      });
+    } else {
+      // Return "Unknown Face" for unrecognized faces
+      res.json({
+        recognized: false,
+        name: "Unknown Face",
+        similarity: 0.0,
+        confidence: 0.0
+      });
+    }
   });
 });
+
+// Helper - cosine similarity between two numeric arrays
+function cosineSimilarity(a, b) {
+  if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  if (a.length !== b.length) {
+    // If dimensions differ, try to align by truncation
+    const minLen = Math.min(a.length, b.length);
+    a = a.slice(0, minLen);
+    b = b.slice(0, minLen);
+  }
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    const ai = Number(a[i]) || 0;
+    const bi = Number(b[i]) || 0;
+    dot += ai * bi;
+    na += ai * ai;
+    nb += bi * bi;
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
 
 // Class management routes
 app.post("/api/classes", (req, res) => {

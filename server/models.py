@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Text, Boolean
 from sqlalchemy.orm import relationship
 from db import Base
 import datetime
@@ -10,9 +10,23 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(50), unique=True, index=True, nullable=False)
     password_hash = Column(String(255), nullable=False)
+    is_admin = Column(Boolean, default=False)
 
     faces = relationship("Face", back_populates="user")
     attendance_records = relationship("Attendance", back_populates="user")
+    photos = relationship("Photo", back_populates="user")
+
+
+class Photo(Base):
+    __tablename__ = "photos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    filename = Column(String(255), nullable=False)
+    uploaded_at = Column(DateTime, default=datetime.datetime.utcnow)
+    confidence_score = Column(Integer)  # Store confidence as percentage (0-100)
+
+    user = relationship("User", back_populates="photos")
 
 
 class Face(Base):

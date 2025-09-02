@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { Camera } from '../components/Camera';
+import Camera from '../components/Camera';
 import FaceDetectionOverlay from '../components/FaceDetectionOverlay';
 import CyberButton from '../components/CyberButton';
 import CyberInput from '../components/CyberInput';
@@ -21,11 +21,14 @@ interface EnrollmentData {
 }
 
 export default function CameraPage() {
-  const { user, isTeacher } = useAuth();
+  const { user, isTeacher, isStudent } = useAuth();
   const [mode, setMode] = useState<'recognize' | 'enroll'>('recognize');
   const [isActive, setIsActive] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [faceCount, setFaceCount] = useState(0);
+
+  // Prevent students from manually marking attendance
+  const canMarkAttendance = !isStudent;
   const [recognitionResults, setRecognitionResults] = useState<RecognitionResult[]>([]);
   const [currentRecognition, setCurrentRecognition] = useState<RecognitionResult | null>(null);
   const [enrollmentData, setEnrollmentData] = useState<EnrollmentData>({
@@ -40,8 +43,6 @@ export default function CameraPage() {
     unknown: 0,
     avgConfidence: 0
   });
-  const [engineStatus, setEngineStatus] = useState<{ initialized: boolean; backend: string; message?: string } | null>(null);
-  const [captureDisabledReason, setCaptureDisabledReason] = useState<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -86,25 +87,70 @@ export default function CameraPage() {
     if (faces.length === 1) {
       // For recognition mode
       if (mode === 'recognize') {
-        // Simulate recognition process
-        setTimeout(() => {
-          const mockResult: RecognitionResult = {
-            name: 'John Doe',
-            studentId: 'DUT12345',
-            confidence: 92.5,
-            timestamp: new Date()
-          };
+        try {
+          const canvas = document.createElement('canvas');
+          const video = document.querySelector('video');
+          if (!video) return;
           
-          setCurrentRecognition(mockResult);
-          setRecognitionResults(prev => [mockResult, ...prev.slice(0, 9)]);
-          setSessionStats(prev => ({
-            recognized: prev.recognized + 1,
-            unknown: prev.unknown,
-            avgConfidence: (prev.avgConfidence + mockResult.confidence) / 2
-          }));
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return;
           
-          playSound('success');
-        }, 1500);
+          // Draw current frame to canvas
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          
+          // Convert to base64
+          const base64Image = canvas.toDataURL('image/jpeg');
+          
+          // Send to backend for recognition
+          fetch('/api/recognize', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              image: base64Image
+            })
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.recognized) {
+              const result: RecognitionResult = {
+                name: data.name,
+                studentId: data.studentId,
+                confidence: data.confidence,
+                timestamp: new Date()
+              };
+
+              setCurrentRecognition(result);
+              setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
+              setSessionStats(prev => ({
+                recognized: prev.recognized + 1,
+                unknown: prev.unknown,
+                avgConfidence: (prev.avgConfidence + result.confidence) / 2
+              }));
+              
+              playSound('success');
+            } else {
+              setCurrentRecognition(null);
+              setSessionStats(prev => ({
+                ...prev,
+                unknown: prev.unknown + 1
+              }));
+              playSound('error');
+            }
+          })
+          .catch(error => {
+            console.error('Recognition error:', error);
+            setCurrentRecognition(null);
+            playSound('error');
+          });
+        } catch (error) {
+          console.error('Recognition error:', error);
+          setCurrentRecognition(null);
+          playSound('error');
+        }
       }
       // For enrollment mode
       else if (mode === 'enroll' && enrollmentStep === 'capture') {
@@ -115,11 +161,6 @@ export default function CameraPage() {
       setIsScanning(false);
     }
   }, [mode, playSound, enrollmentStep]);
-
-  const handleEngineStatus = useCallback((s: { initialized: boolean; backend: string; message?: string }) => {
-    setEngineStatus(s);
-    console.info('Engine status:', s);
-  }, []);
 
   const startEnrollment = () => {
     if (!enrollmentData.name || !enrollmentData.studentId || !enrollmentData.email) {
@@ -297,7 +338,6 @@ export default function CameraPage() {
               <Camera
                 onFaceDetected={handleFaceDetected}
                 isActive={isActive}
-                onEngineStatus={handleEngineStatus}
               />
               
               {/* Face Detection Overlay */}
@@ -358,38 +398,13 @@ export default function CameraPage() {
                     )}
 
                     <div className="flex gap-3">
-                      <div className="flex items-center gap-3">
-                        <CyberButton
-                          variant="primary"
-                          onClick={() => {
-                            if (!isActive) {
-                              console.warn('Capture attempted but camera inactive');
-                              setCaptureDisabledReason('Camera inactive');
-                              return;
-                            }
-                            if (faceCount === 0) {
-                              console.warn('Capture attempted but no face detected');
-                              setCaptureDisabledReason('No face detected');
-                              return;
-                            }
-                            if (enrollmentData.capturedPhotos.length >= 6) {
-                              console.warn('Capture attempted but limit reached');
-                              setCaptureDisabledReason('Maximum photos reached');
-                              return;
-                            }
-
-                            // Clear any previous reason and proceed
-                            setCaptureDisabledReason(null);
-                            handleEnrollmentCapture();
-                          }}
-                          disabled={!isActive || faceCount === 0 || enrollmentData.capturedPhotos.length >= 6}
-                        >
-                          📸 Capture Face ({6 - enrollmentData.capturedPhotos.length} remaining)
-                        </CyberButton>
-                        {captureDisabledReason && (
-                          <div className="text-sm text-yellow-300 font-mono">{captureDisabledReason}</div>
-                        )}
-                      </div>
+                      <CyberButton
+                        variant="primary"
+                        onClick={handleEnrollmentCapture}
+                        disabled={!isActive || faceCount === 0 || enrollmentData.capturedPhotos.length >= 6}
+                      >
+                        📸 Capture Face ({6 - enrollmentData.capturedPhotos.length} remaining)
+                      </CyberButton>
                       {enrollmentData.capturedPhotos.length > 0 && (
                         <CyberButton
                           variant="success"
@@ -417,26 +432,32 @@ export default function CameraPage() {
 
             {/* Camera Controls */}
             <div className="mt-6 flex items-center justify-center gap-4">
-              <CyberButton
-                variant={isActive ? 'danger' : 'primary'}
-                size="lg"
-                onClick={toggleCamera}
-                icon={
-                  isActive ? (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
-                    </svg>
-                  ) : (
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l.414.414c.187.187.293.442.293.707V13M15 10h-1.586a1 1 0 00-.707.293l-.414.414A1 1 0 0012 11.414V13" />
-                    </svg>
-                  )
-                }
-                glowColor={isActive ? '#ff0000' : '#00F5FF'}
-              >
-                {isActive ? 'STOP CAMERA' : 'START CAMERA'}
-              </CyberButton>
+              {canMarkAttendance ? (
+                <CyberButton
+                  variant={isActive ? 'danger' : 'primary'}
+                  size="lg"
+                  onClick={toggleCamera}
+                  icon={
+                    isActive ? (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 10h6v4H9z" />
+                      </svg>
+                    ) : (
+                      <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h1.586a1 1 0 01.707.293l.414.414c.187.187.293.442.293.707V13M15 10h-1.586a1 1 0 00-.707.293l-.414.414A1 1 0 0012 11.414V13" />
+                      </svg>
+                    )
+                  }
+                  glowColor={isActive ? '#ff0000' : '#00F5FF'}
+                >
+                  {isActive ? 'STOP CAMERA' : 'START CAMERA'}
+                </CyberButton>
+              ) : (
+                <div className="text-gray-400 text-sm font-mono">
+                  ⚠️ Students cannot manually mark attendance
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -577,8 +598,8 @@ export default function CameraPage() {
               <div className="flex items-center justify-between">
                 <span className="text-gray-300 text-sm">AI Model</span>
                 <div className="flex items-center gap-2">
-                  <div className={`w-2 h-2 rounded-full ${engineStatus?.initialized ? 'bg-green-400 animate-cyber-pulse' : 'bg-gray-500'}`}></div>
-                  <span className={`${engineStatus?.initialized ? 'text-green-400' : 'text-gray-400'} font-mono text-sm`}>{engineStatus?.backend ? engineStatus.backend.toUpperCase() : 'N/A'} {engineStatus?.message ? `- ${engineStatus.message}` : ''}</span>
+                  <div className="w-2 h-2 bg-green-400 rounded-full animate-cyber-pulse"></div>
+                  <span className="text-green-400 font-mono text-sm">LOADED</span>
                 </div>
               </div>
               

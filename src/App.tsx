@@ -10,6 +10,7 @@ import Dashboard from './pages/Dashboard';
 import CameraPage from './pages/CameraPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import ProtectedRoute from './components/ProtectedRoute';
+import SelfEnrollmentPage from './pages/SelfEnrollmentPage';
 
 export default function App() {
   return (
@@ -21,6 +22,11 @@ export default function App() {
               {/* Public Routes */}
               <Route path="/login" element={<LoginPage />} />
               <Route path="/register" element={<RegisterPage />} />
+              <Route path="/enroll" element={
+                <ProtectedRoute>
+                  <SelfEnrollmentPage />
+                </ProtectedRoute>
+              } />
               
               {/* Protected Routes */}
               <Route 

@@ -18,6 +18,7 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isTeacher: boolean;
   isStudent: boolean;
+  isAdmin: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -31,31 +32,38 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check for existing session; if none, attempt to auto-login as admin (dev mode)
+    // Check for existing session from localStorage
     const init = async () => {
+      // Prefer loading user from authService (it centralizes token+user storage)
+      try {
+        const svcUser = authService.getCurrentUser();
+        if (svcUser) {
+          setUser(svcUser as User);
+          setLoading(false);
+          return;
+        }
+      } catch (e) {
+        console.warn('authService lookup failed', e);
+      }
+
+      // Backwards-compatible fallback to legacy localStorage key
       const savedUser = localStorage.getItem('dut_user');
       if (savedUser) {
         try {
-          setUser(JSON.parse(savedUser));
-          setLoading(false);
-          return;
+          const parsed = JSON.parse(savedUser);
+          if (parsed && ['student', 'teacher', 'admin'].includes(parsed.role)) {
+            setUser(parsed);
+            // Mirror into authService storage if possible
+            try { localStorage.setItem('user', JSON.stringify(parsed)); } catch (e) {}
+          } else {
+            console.warn('Invalid user role found in storage');
+            localStorage.removeItem('dut_user');
+          }
         } catch (error) {
+          console.error('Error parsing saved user:', error);
           localStorage.removeItem('dut_user');
         }
       }
-
-      // Dev mode: Always set an admin user without requiring login
-      const devAdmin: User = {
-        id: 1,
-        name: 'Development Admin',
-        email: 'admin@dut.ac.za',
-        studentId: 'ADMINDUT',
-        role: 'teacher' as const
-      };
-      setUser(devAdmin);
-      try { 
-        localStorage.setItem('dut_user', JSON.stringify(devAdmin)); 
-      } catch (e) { /* ignore */ }
       setLoading(false);
     };
 
@@ -107,8 +115,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     register,
     logout,
     isAuthenticated: !!user,
-    isTeacher: user?.role === 'teacher',
+    isTeacher: user?.role === 'teacher' || user?.role === 'admin',
     isStudent: user?.role === 'student',
+    isAdmin: user?.role === 'admin',
   };
 
   return (

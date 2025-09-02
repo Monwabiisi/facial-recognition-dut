@@ -1,10 +1,18 @@
 from fastapi import FastAPI, Depends, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy.orm import Session
 from db import get_db
 import models, auth, schemas
+from routers import photos
 
 app = FastAPI()
+
+# Mount the photos directory for serving uploaded files
+app.mount("/photos", StaticFiles(directory="uploads/photos"), name="photos")
+
+# Include the photos router
+app.include_router(photos.router)
 
 # Allow frontend (adjust if needed)
 app.add_middleware(

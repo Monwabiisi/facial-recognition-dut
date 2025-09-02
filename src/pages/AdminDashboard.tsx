@@ -38,48 +38,61 @@ export default function AdminDashboard(): JSX.Element {
   useEffect(() => {
     if (!isTeacher) return;
     let mounted = true;
+    
     async function fetchAll() {
       setLoading(true);
       try {
-        const [uRes, aRes] = await Promise.all([
-          fetch('/api/users'),
-          fetch('/api/attendance/sessions')
+        const authHeaders = {
+          'Authorization': `Bearer ${localStorage.getItem('token')}`,
+          'Content-Type': 'application/json'
+        };
+
+        // Fetch all necessary data in parallel
+        const [usersRes, sessionRes] = await Promise.all([
+          fetch('/api/users', { headers: authHeaders }),
+          fetch('/api/attendance/sessions/active', { headers: authHeaders })
         ]);
 
-        if (!uRes.ok) throw new Error('Failed to load users');
-        if (!aRes.ok) throw new Error('Failed to load sessions');
+        if (!usersRes.ok) throw new Error('Failed to load users');
+        if (!sessionRes.ok) throw new Error('Failed to load sessions');
 
-        const uData = await uRes.json();
-        const sessions = await aRes.json();
+        const userData = await usersRes.json();
+        const sessions = await sessionRes.json();
 
-        // Flatten session list into attendance placeholder rows (lightweight approach)
+        // Process attendance records for each session
         const attendanceRows: AttendanceRecord[] = [];
-        for (const s of sessions) {
-          // Attempt to fetch records for each session but keep it light (first page)
+        for (const session of sessions) {
           try {
-            const recRes = await fetch(`/api/attendance/records/${s.id}`);
-            if (recRes.ok) {
-              const recs = await recRes.json();
-              for (const r of recs) {
-                attendanceRows.push({
-                  id: r.id,
-                  session_id: r.session_id,
-                  user_id: r.user_id,
-                  name: r.name || r.student_id,
-                  class_name: s.class_name || s.name || 'Unknown',
-                  timestamp: r.timestamp,
-                  status: r.status,
-                  confidence: r.confidence
-                });
+            const recordsRes = await fetch(`/api/attendance/records/${session.id}`, {
+              headers: authHeaders
+            });
+            
+            if (recordsRes.ok) {
+              const records = await recordsRes.json();
+              for (const record of records) {
+                // Only include records with valid user data
+                const user = userData.find((u: User) => u.id === record.user_id);
+                if (user) {
+                  attendanceRows.push({
+                    id: record.id,
+                    session_id: session.id,
+                    user_id: record.user_id,
+                    name: user.name || user.student_id,
+                    class_name: session.class_name || session.name || 'Unknown',
+                    timestamp: record.timestamp,
+                    status: record.status,
+                    confidence: record.confidence
+                  });
+                }
               }
             }
           } catch (e) {
-            // ignore per-session failures
+            console.error(`Failed to fetch records for session ${session.id}:`, e);
           }
         }
 
         if (mounted) {
-          setUsers(uData);
+          setUsers(userData);
           setAttendance(attendanceRows);
           setLastError(null);
         }
@@ -172,7 +185,12 @@ export default function AdminDashboard(): JSX.Element {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <CyberInput value={query} onChange={(e:any) => setQuery(e.target.value)} placeholder="Search users..." />
+            <CyberInput 
+              label="Search"
+              value={query} 
+              onChange={(e:any) => setQuery(e.target.value)} 
+              placeholder="Search users..." 
+            />
             <CyberButton onClick={() => exportCSV(users, 'users.csv')}>Export Users</CyberButton>
             <CyberButton onClick={() => exportCSV(attendance, 'attendance.csv')}>Export Attendance</CyberButton>
           </div>
@@ -234,20 +252,43 @@ export default function AdminDashboard(): JSX.Element {
                     <td className="px-3 py-2">{u.created_at ?? '-'}</td>
                     <td className="px-3 py-2">
                       <div className="flex gap-2">
-                        <CyberButton onClick={async () => {
-                          try {
-                            await fetch(`/api/users/${u.id}/approve`, { method: 'POST' });
-                            const res = await fetch('/api/users');
-                            if (res.ok) setUsers(await res.json());
-                          } catch (e) { setLastError((e as Error).message); }
-                        }}>Approve</CyberButton>
-                        <CyberButton onClick={async () => {
-                          try {
-                            await fetch(`/api/users/${u.id}/reject`, { method: 'POST' });
-                            const res = await fetch('/api/users');
-                            if (res.ok) setUsers(await res.json());
-                          } catch (e) { setLastError((e as Error).message); }
-                        }} variant="secondary">Reject</CyberButton>
+                        {u.role === 'pending' ? (
+                          <>
+                            <CyberButton onClick={async () => {
+                              try {
+                                await fetch(`/api/users/${u.id}/approve`, { method: 'POST' });
+                                const res = await fetch('/api/users');
+                                if (res.ok) setUsers(await res.json());
+                              } catch (e) { setLastError((e as Error).message); }
+                            }}>Approve</CyberButton>
+                            <CyberButton onClick={async () => {
+                              try {
+                                await fetch(`/api/users/${u.id}/reject`, { method: 'POST' });
+                                const res = await fetch('/api/users');
+                                if (res.ok) setUsers(await res.json());
+                              } catch (e) { setLastError((e as Error).message); }
+                            }} variant="secondary">Reject</CyberButton>
+                          </>
+                        ) : (
+                          <select
+                            className="bg-black/20 border border-cyan-500/30 rounded px-3 py-1.5 text-sm font-mono text-cyan-400 hover:border-cyan-500/50 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-colors duration-200"
+                            value={u.role}
+                            onChange={async (e) => {
+                              try {
+                                await fetch(`/api/users/${u.id}/role`, {
+                                  method: 'POST',
+                                  headers: { 'Content-Type': 'application/json' },
+                                  body: JSON.stringify({ role: e.target.value })
+                                });
+                                const res = await fetch('/api/users');
+                                if (res.ok) setUsers(await res.json());
+                              } catch (e) { setLastError((e as Error).message); }
+                            }}
+                          >
+                            <option value="student">Student</option>
+                            <option value="teacher">Teacher</option>
+                          </select>
+                        )}
                       </div>
                     </td>
                   </tr>

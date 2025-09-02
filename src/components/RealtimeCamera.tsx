@@ -81,9 +81,10 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
   }, []);
 
   // Load face data from server
+  const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
   const loadFaceData = async () => {
     try {
-      const response = await fetch('http://localhost:5000/api/faces');
+      const response = await fetch(`${API_BASE}/faces`);
       if (response.ok) {
         const data = await response.json();
         const faceData = data.map((item: any) => ({
@@ -207,8 +208,8 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
         descriptor: detection.descriptor
       };
       
-      // Save to server
-      const response = await fetch('http://localhost:5000/api/faces/enroll', {
+  // Save to server
+  const response = await fetch(`${API_BASE}/faces/enroll`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
