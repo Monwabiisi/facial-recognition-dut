@@ -79,9 +79,8 @@ export default defineConfig(({ command, mode }): UserConfig => {
         'Cross-Origin-Opener-Policy': 'same-origin',
       },
       proxy: {
-        // Add proxy configuration if needed
         '/api': {
-          target: env.VITE_API_URL || 'http://localhost:3000',
+          target: 'http://localhost:5000',
           changeOrigin: true,
           secure: false,
         },
