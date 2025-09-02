@@ -6,6 +6,9 @@ type Props = {
   label?: string;
   color?: 'blue' | 'green' | 'purple' | 'gold';
   className?: string;
+  trend?: 'up' | 'down' | 'neutral';
+  trendValue?: string;
+  animated?: boolean;
 };
 
 const colorMap: Record<string, string> = {
@@ -15,8 +18,28 @@ const colorMap: Record<string, string> = {
   gold: 'from-yellow-400 to-yellow-600'
 };
 
-export default function StatsCard({ icon, value, label, color = 'blue', className = '' }: Props) {
+export default function StatsCard({ 
+  icon, 
+  value, 
+  label, 
+  color = 'blue', 
+  className = '', 
+  trend,
+  trendValue,
+  animated
+}: Props) {
   const grad = colorMap[color] || colorMap.blue;
+  
+  const getTrendIcon = () => {
+    switch (trend) {
+      case 'up':
+        return '↑';
+      case 'down':
+        return '↓';
+      default:
+        return '→';
+    }
+  };
 
   return (
     <div className={`stats-card ${className}`}>
@@ -39,9 +62,24 @@ export default function StatsCard({ icon, value, label, color = 'blue', classNam
         </div>
       </div>
 
+      {trend && (
+        <div className={`mt-2 text-xs ${
+          trend === 'up' ? 'text-green-400' : 
+          trend === 'down' ? 'text-red-400' : 
+          'text-gray-400'
+        }`}>
+          {getTrendIcon()} {trendValue}
+        </div>
+      )}
+      
       <div className="mt-4 text-xs text-white/60">
         <div className="h-2 bg-white/5 rounded-full overflow-hidden">
-          <div className="h-full bg-gradient-to-r from-neon-blue to-neon-purple" style={{ width: '60%' }} />
+          <div 
+            className={`h-full bg-gradient-to-r from-neon-blue to-neon-purple ${
+              animated ? 'animate-grow-bar' : ''
+            }`} 
+            style={{ width: '60%' }} 
+          />
         </div>
       </div>
     </div>

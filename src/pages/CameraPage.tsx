@@ -5,6 +5,7 @@ import FaceDetectionOverlay from '../components/FaceDetectionOverlay';
 import CyberButton from '../components/CyberButton';
 import CyberInput from '../components/CyberInput';
 import StatsCard from '../components/StatsCard';
+import { faceService } from '../services/faceService';
 
 interface RecognitionResult {
   name: string;
@@ -79,7 +80,7 @@ export default function CameraPage() {
     oscillator.stop(context.currentTime + 0.3);
   }, []);
 
-  const handleFaceDetected = useCallback((faces: any[]) => {
+  const handleFaceDetected = useCallback(async (faces: any[]) => {
     setFaceCount(faces.length);
     setIsScanning(faces.length > 0);
     
@@ -91,61 +92,63 @@ export default function CameraPage() {
           const canvas = document.createElement('canvas');
           const video = document.querySelector('video');
           if (!video) return;
-          
+
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           const ctx = canvas.getContext('2d');
           if (!ctx) return;
-          
+
           // Draw current frame to canvas
           ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          
-          // Convert to base64
-          const base64Image = canvas.toDataURL('image/jpeg');
-          
-          // Send to backend for recognition
-          fetch('/api/recognize', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              image: base64Image
-            })
-          })
-          .then(response => response.json())
-          .then(data => {
-            if (data.recognized) {
-              const result: RecognitionResult = {
-                name: data.name,
-                studentId: data.studentId,
-                confidence: data.confidence,
-                timestamp: new Date()
-              };
 
-              setCurrentRecognition(result);
-              setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
-              setSessionStats(prev => ({
-                recognized: prev.recognized + 1,
-                unknown: prev.unknown,
-                avgConfidence: (prev.avgConfidence + result.confidence) / 2
-              }));
-              
-              playSound('success');
-            } else {
-              setCurrentRecognition(null);
-              setSessionStats(prev => ({
-                ...prev,
-                unknown: prev.unknown + 1
-              }));
-              playSound('error');
-            }
-          })
-          .catch(error => {
-            console.error('Recognition error:', error);
+          // If the detection contains an embedding, use server-side embedding recognition helper
+          const detection = faces[0];
+          let data: any = null;
+
+          if (detection && detection.embedding) {
+            // Ensure embedding is a Float32Array
+            const emb = detection.embedding;
+            const embedding = emb instanceof Float32Array ? emb : new Float32Array(emb);
+            data = await faceService.recognizeFaceServer(embedding);
+          } else {
+            // Fallback: send captured image to server endpoint
+            const blob = await faceService.canvasToBlob(canvas);
+            const form = new FormData();
+            form.append('image', blob, `capture_${Date.now()}.jpg`);
+
+            const resp = await fetch('/api/faces/recognize', {
+              method: 'POST',
+              body: form
+            });
+
+            data = await resp.json();
+          }
+
+          if (data && data.recognized) {
+            const result: RecognitionResult = {
+              name: data.name || data.full_name || data.user_name || '',
+              studentId: (data.studentId || data.student_id || data.student || ''),
+              confidence: data.confidence || data.similarity || 0,
+              timestamp: new Date()
+            };
+
+            setCurrentRecognition(result);
+            setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
+            setSessionStats(prev => ({
+              recognized: prev.recognized + 1,
+              unknown: prev.unknown,
+              avgConfidence: (prev.avgConfidence + result.confidence) / 2
+            }));
+
+            playSound('success');
+          } else {
             setCurrentRecognition(null);
+            setSessionStats(prev => ({
+              ...prev,
+              unknown: prev.unknown + 1
+            }));
             playSound('error');
-          });
+          }
         } catch (error) {
           console.error('Recognition error:', error);
           setCurrentRecognition(null);

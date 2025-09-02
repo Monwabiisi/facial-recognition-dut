@@ -3,6 +3,7 @@ import { useAuth } from '../contexts/AuthContext';
 import StatsCard from '../components/StatsCard';
 import AttendanceChart from '../components/AttendanceChart';
 import { downloadCsv } from '../utils/csv';
+import { fetchAnalytics } from '../services/analytics';
 
 interface AnalyticsData {
   totalStudents: number;
@@ -53,43 +54,8 @@ export default function AnalyticsPage() {
   const loadAnalyticsData = async () => {
     setLoading(true);
     try {
-      // Simulate API call - replace with actual service
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      const mockData: AnalyticsData = {
-        totalStudents: 156,
-        presentToday: 142,
-        attendanceRate: 91.2,
-        weeklyTrend: 5.3,
-        monthlyData: {
-          labels: ['Week 1', 'Week 2', 'Week 3', 'Week 4'],
-          attendance: [134, 142, 138, 145],
-          total: [156, 156, 156, 156]
-        },
-        topPerformers: [
-          { name: 'Sarah Johnson', studentId: 'DUT001', rate: 98.5 },
-          { name: 'Michael Chen', studentId: 'DUT002', rate: 96.8 },
-          { name: 'Priya Patel', studentId: 'DUT003', rate: 95.2 }
-        ],
-        recentActivity: [
-          {
-            id: '1',
-            student: 'John Doe',
-            action: 'Marked Present',
-            timestamp: new Date(),
-            confidence: 94.5
-          },
-          {
-            id: '2',
-            student: 'Jane Smith',
-            action: 'Marked Present',
-            timestamp: new Date(Date.now() - 300000),
-            confidence: 87.2
-          }
-        ]
-      };
-      
-      setData(mockData);
+      const analyticsData = await fetchAnalytics(selectedPeriod);
+      setData(analyticsData);
     } catch (error) {
       console.error('Failed to load analytics:', error);
     } finally {
@@ -186,27 +152,27 @@ export default function AnalyticsPage() {
           value={data.presentToday}
           label="Present Today"
           color="green"
-          trend="up"
-          trendValue={`+${data.weeklyTrend}%`}
+          trend={data.weeklyTrend > 0 ? "up" : data.weeklyTrend < 0 ? "down" : "neutral"}
+          trendValue={`${data.weeklyTrend > 0 ? '+' : ''}${data.weeklyTrend.toFixed(1)}%`}
           animated
         />
         
         <StatsCard
           icon="📈"
-          value={`${data.attendanceRate}%`}
+          value={`${data.attendanceRate.toFixed(1)}%`}
           label="Attendance Rate"
           color="purple"
-          trend="up"
-          trendValue="+2.1%"
           animated
         />
         
         <StatsCard
           icon="🎯"
-          value="A+"
+          value={data.attendanceRate >= 90 ? "A+" : 
+                 data.attendanceRate >= 80 ? "A" : 
+                 data.attendanceRate >= 70 ? "B" : 
+                 data.attendanceRate >= 60 ? "C" : "D"}
           label="Performance Grade"
-          color="pink"
-          trend="neutral"
+          color="gold"
           animated
         />
       </div>
