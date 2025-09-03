@@ -44,10 +44,14 @@ const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, onVideoRead
         
         // Try loading from local models first
         try {
+          console.log('Loading face-api.js models...');
+          // Load all required models, including the face recognition net
           await Promise.all([
             faceapi.nets.tinyFaceDetector.loadFromUri(LOCAL_MODEL_BASE),
             faceapi.nets.faceLandmark68Net.loadFromUri(LOCAL_MODEL_BASE),
-            faceapi.nets.faceRecognitionNet.loadFromUri(LOCAL_MODEL_BASE)
+            faceapi.nets.faceRecognitionNet.loadFromUri(LOCAL_MODEL_BASE),
+            faceapi.nets.faceExpressionNet.loadFromUri(LOCAL_MODEL_BASE),
+            faceapi.nets.ssdMobilenetv1.loadFromUri(LOCAL_MODEL_BASE)  // More accurate detector
           ]);
           console.log('✅ Loaded face-api.js models from local path');
         } catch (localErr) {
@@ -58,7 +62,9 @@ const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, onVideoRead
           await Promise.all([
             faceapi.nets.tinyFaceDetector.loadFromUri(CDN_MODEL_BASE),
             faceapi.nets.faceLandmark68Net.loadFromUri(CDN_MODEL_BASE),
-            faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_BASE)
+            faceapi.nets.faceRecognitionNet.loadFromUri(CDN_MODEL_BASE),
+            faceapi.nets.faceExpressionNet.loadFromUri(CDN_MODEL_BASE),
+            faceapi.nets.ssdMobilenetv1.loadFromUri(CDN_MODEL_BASE)
           ]);
           console.log('✅ Loaded face-api.js models from CDN');
         }
@@ -83,18 +89,36 @@ const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, onVideoRead
       if (!mounted) return;
       try {
         if (isActive && modelsLoaded && videoRef.current && !videoRef.current.paused) {
-          const opts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256 });
-          const results = await faceapi
-            .detectAllFaces(videoRef.current as HTMLVideoElement, opts)
+          // Use both detectors for best results
+          const tinyOpts = new faceapi.TinyFaceDetectorOptions({ inputSize: 256 });
+          const ssdOpts = new faceapi.SsdMobilenetv1Options({ minConfidence: 0.5 });
+          
+          // Try both detectors
+          let results = await faceapi
+            .detectAllFaces(videoRef.current as HTMLVideoElement, ssdOpts)
             .withFaceLandmarks()
             .withFaceDescriptors();
+            
+          if (!results.length) {
+            // Fallback to tiny detector if SSD finds nothing
+            results = await faceapi
+              .detectAllFaces(videoRef.current as HTMLVideoElement, tinyOpts)
+              .withFaceLandmarks()
+              .withFaceDescriptors();
+          }
+
+          console.log('Face detection results:', {
+            found: results.length,
+            hasDescriptors: results.length > 0 && results[0].descriptor !== undefined,
+            descriptorSize: results[0]?.descriptor?.length
+          });
 
           // Draw detections + landmarks onto overlay canvas so face pins show
           const canvas = canvasRef.current;
           if (canvas && videoRef.current) {
             const video = videoRef.current;
-            const displayWidth = video.clientWidth || video.videoWidth || opts.inputSize || 640;
-            const displayHeight = video.clientHeight || video.videoHeight || opts.inputSize || 480;
+            const displayWidth = video.clientWidth || video.videoWidth || 640;
+            const displayHeight = video.clientHeight || video.videoHeight || 480;
             const displaySizeCss = { width: displayWidth, height: displayHeight };
 
             const dpr = window.devicePixelRatio || 1;

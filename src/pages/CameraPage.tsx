@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useEnrollmentStatus } from '../hooks/useEnrollmentStatus';
 import Camera from '../components/Camera';
 import FaceDetectionOverlay from '../components/FaceDetectionOverlay';
 import CyberButton from '../components/CyberButton';
@@ -24,13 +25,14 @@ interface EnrollmentData {
 
 export default function CameraPage() {
   const { user, isTeacher, isStudent } = useAuth();
-  const [mode, setMode] = useState<'recognize' | 'enroll'>('recognize');
+  const { isEnrolled, loading: enrollmentLoading } = useEnrollmentStatus();
+  const [mode, setMode] = useState<'recognize' | 'enroll'>(isTeacher ? 'recognize' : 'enroll');
   const [isActive, setIsActive] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [faceCount, setFaceCount] = useState(0);
 
-  // Prevent students from manually marking attendance
-  const canMarkAttendance = !isStudent;
+  // Only teachers can mark attendance
+  const canMarkAttendance = isTeacher;
   const [recognitionResults, setRecognitionResults] = useState<RecognitionResult[]>([]);
   const [currentRecognition, setCurrentRecognition] = useState<RecognitionResult | null>(null);
   const [enrollmentData, setEnrollmentData] = useState<EnrollmentData>({
@@ -148,21 +150,38 @@ export default function CameraPage() {
             };
 
             const now = Date.now();
-            // Only count a recognition if it's a different user or after a short cooldown
-            const shouldCountRecognition = (lastRecognizedNameRef.current !== result.name) || (now - lastRecognizedAtRef.current > 2000);
+            // Only count a recognition if:
+            // 1. It's a valid recognition (has name, decent confidence)
+            // 2. Either it's a different person or enough time has passed
+            const shouldCountRecognition = 
+              result.name && // Must have a name
+              result.confidence > 60 && // Must have decent confidence
+              ((lastRecognizedNameRef.current !== result.name) || // Either different person
+               (now - lastRecognizedAtRef.current > 2000)); // Or same person after cooldown
 
-            console.debug('Recognition result:', { data, result, shouldCountRecognition, lastRecognizedName: lastRecognizedNameRef.current, lastRecognizedAt: lastRecognizedAtRef.current });
+            console.debug('Recognition result:', { 
+              name: result.name,
+              confidence: result.confidence,
+              shouldCount: shouldCountRecognition,
+              lastRecognized: lastRecognizedNameRef.current,
+              timeSinceLastCount: now - lastRecognizedAtRef.current,
+              currentRecognized: sessionStats.recognized
+            });
 
             setCurrentRecognition(result);
             if (shouldCountRecognition) {
               lastRecognizedAtRef.current = now;
               lastRecognizedNameRef.current = result.name;
               setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
-              setSessionStats(prev => ({
-                recognized: prev.recognized + 1,
-                unknown: prev.unknown,
-                avgConfidence: (prev.avgConfidence + result.confidence) / 2
-              }));
+              setSessionStats(prev => {
+                const newRecognized = prev.recognized + 1;
+                return {
+                  recognized: newRecognized,
+                  unknown: prev.unknown,
+                  // Rolling average: ((old_avg * old_count) + new_value) / new_count
+                  avgConfidence: ((prev.avgConfidence * prev.recognized) + result.confidence) / newRecognized
+                };
+              });
               playSound('success');
             } else {
               // Still update the UI but don't increment counter due to cooldown
@@ -211,8 +230,19 @@ export default function CameraPage() {
   };
 
   const handleEnrollmentCapture = () => {
-    if (!canvasRef.current || !isActive || !isScanning) {
-      alert("Please ensure your face is properly detected before capturing");
+    if (!canvasRef.current) {
+      console.error("Canvas ref is not available");
+      alert("Internal error: Canvas not available");
+      return;
+    }
+
+    if (!isActive) {
+      alert("Please start the camera first");
+      return;
+    }
+
+    if (!isScanning) {
+      alert("Please position your face in front of the camera");
       return;
     }
 
@@ -334,11 +364,58 @@ export default function CameraPage() {
   };
 
   const toggleCamera = () => {
-    setIsActive(!isActive);
-    if (!isActive) {
+    const newActive = !isActive;
+    setIsActive(newActive);
+    if (newActive) {
       playSound('scan');
+    } else {
+      // Reset stats when camera turned off
+      setSessionStats({
+        recognized: 0,
+        unknown: 0,
+        avgConfidence: 0
+      });
+      setRecognitionResults([]);
+      setCurrentRecognition(null);
+      lastRecognizedAtRef.current = 0;
+      lastRecognizedNameRef.current = null;
+      lastUnknownAtRef.current = 0;
     }
   };
+
+  if (enrollmentLoading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center space-y-4">
+          <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto"></div>
+          <p className="text-gray-300 font-mono">Loading enrollment status...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (isStudent && isEnrolled) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div className="glass-card p-8 text-center">
+          <div className="w-20 h-20 mx-auto bg-green-500/20 rounded-full flex items-center justify-center mb-4">
+            <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold font-heading gradient-text mb-4">
+            You're Already Enrolled! 🎉
+          </h1>
+          <p className="text-gray-300 text-lg mb-6">
+            Your face has been registered in the system. You don't need to do anything else - just show up to class and our cameras will automatically mark your attendance!
+          </p>
+          <div className="bg-white/5 p-4 rounded-xl text-sm text-gray-400 font-mono inline-block">
+            Student ID: {user?.studentId}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -350,24 +427,24 @@ export default function CameraPage() {
               📹 FACIAL RECOGNITION CAMERA
             </h1>
             <p className="text-gray-300 font-body">
-              Advanced AI-powered attendance tracking system
+              {isTeacher ? "Advanced AI-powered attendance tracking system" : "Face Enrollment System"}
             </p>
           </div>
           
-          {/* Mode Toggle */}
-          <div className="flex items-center gap-4">
-            <div className="bg-white/5 rounded-xl p-1 flex">
-              <button
-                onClick={() => setMode('recognize')}
-                className={`px-4 py-2 rounded-lg font-mono text-sm transition-all duration-300 ${
-                  mode === 'recognize'
-                    ? 'bg-cyan-400 text-black shadow-lg'
-                    : 'text-cyan-400 hover:bg-white/10'
-                }`}
-              >
-                🔍 RECOGNIZE
-              </button>
-              {isTeacher && (
+          {/* Mode Toggle - Only show for teachers */}
+          {isTeacher && (
+            <div className="flex items-center gap-4">
+              <div className="bg-white/5 rounded-xl p-1 flex">
+                <button
+                  onClick={() => setMode('recognize')}
+                  className={`px-4 py-2 rounded-lg font-mono text-sm transition-all duration-300 ${
+                    mode === 'recognize'
+                      ? 'bg-cyan-400 text-black shadow-lg'
+                      : 'text-cyan-400 hover:bg-white/10'
+                  }`}
+                >
+                  🔍 RECOGNIZE
+                </button>
                 <button
                   onClick={() => setMode('enroll')}
                   className={`px-4 py-2 rounded-lg font-mono text-sm transition-all duration-300 ${
@@ -378,9 +455,9 @@ export default function CameraPage() {
                 >
                   👤 ENROLL
                 </button>
-              )}
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </div>
 
@@ -531,7 +608,7 @@ export default function CameraPage() {
 
             {/* Camera Controls */}
             <div className="mt-6 flex items-center justify-center gap-4">
-              {canMarkAttendance ? (
+              {(isTeacher || (!isTeacher && mode === 'enroll')) ? (
                 <CyberButton
                   variant={isActive ? 'danger' : 'primary'}
                   size="lg"
@@ -564,7 +641,7 @@ export default function CameraPage() {
         {/* Control Panel */}
         <div className="space-y-6">
           {/* Enrollment Form */}
-          {mode === 'enroll' && enrollmentStep === 'form' && isTeacher && (
+          {mode === 'enroll' && enrollmentStep === 'form' && (
             <div className="glass-card p-6">
               <h3 className="text-xl font-bold font-heading text-purple-400 mb-4">
                 👤 NEW ENROLLMENT

@@ -184,6 +184,12 @@ class FaceService {
     threshold: number = 0.6
   ): Promise<RecognitionResult> {
     try {
+      console.log('Starting face recognition with:', {
+        embeddingSize: embedding.length,
+        hasImageBlob: !!imageBlob,
+        threshold
+      });
+
       let response: Response;
 
       // If an image blob is provided, use multipart/form-data (keep existing behavior)
@@ -219,10 +225,13 @@ class FaceService {
 
       if (!response.ok) {
         const error = await response.json();
+        console.error('Recognition request failed:', error);
         throw new Error(error.error || 'Face recognition failed');
       }
 
-      return await response.json();
+      const result = await response.json();
+      console.log('Recognition response:', result);
+      return result;
     } catch (error) {
       console.error('Server face recognition error:', error);
       throw error;

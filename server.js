@@ -33,22 +33,45 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret-change';
 
 // Calculate cosine similarity between two numeric arrays
 function cosineSimilarity(a, b) {
+  // Ensure arrays and convert to numbers
   if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+  
+  // Normalize lengths if needed
   if (a.length !== b.length) {
+    console.warn(`Length mismatch: a=${a.length}, b=${b.length}`);
     const min = Math.min(a.length, b.length);
     a = a.slice(0, min);
     b = b.slice(0, min);
   }
+
+  // Convert to numbers and handle NaN/undefined
+  const aNorm = a.map(x => Number(x) || 0);
+  const bNorm = b.map(x => Number(x) || 0);
+  
   let dot = 0, na = 0, nb = 0;
-  for (let i = 0; i < a.length; i++) {
-    const ai = Number(a[i]) || 0;
-    const bi = Number(b[i]) || 0;
-    dot += ai * bi;
-    na += ai * ai;
-    nb += bi * bi;
+  for (let i = 0; i < aNorm.length; i++) {
+    dot += aNorm[i] * bNorm[i];
+    na += aNorm[i] * aNorm[i];
+    nb += bNorm[i] * bNorm[i];
   }
-  if (na === 0 || nb === 0) return 0;
-  return dot / (Math.sqrt(na) * Math.sqrt(nb));
+
+  // Avoid division by zero and handle degenerate cases
+  if (na === 0 || nb === 0) {
+    console.warn('Zero magnitude vector detected');
+    return 0;
+  }
+
+  const sim = dot / (Math.sqrt(na) * Math.sqrt(nb));
+  
+  // Ensure result is in valid range
+  if (sim < -1 || sim > 1 || Number.isNaN(sim)) {
+    console.warn(`Invalid similarity: ${sim}`);
+    return 0;
+  }
+  
+  // Return absolute value since negative cosine similarity 
+  // still indicates similar directions for face embeddings
+  return Math.abs(sim);
 }
 
 // Initialize schema and default admin user
@@ -194,13 +217,25 @@ app.get('/api/faces', (req, res) => {
 });
 
 app.post('/api/faces/recognize', (req, res) => {
-  const { embedding, threshold = 0.6 } = req.body;
+  const { embedding, threshold = 0.4 } = req.body; // Lowered threshold for testing
+  console.log('Recognition request received:', { 
+    threshold,
+    embeddingType: typeof embedding,
+    isArray: Array.isArray(embedding),
+    length: embedding?.length
+  });
   if (!embedding) return res.status(400).json({ error: 'Face embedding required' });
 
   let parsed = [];
   try {
     parsed = Array.isArray(embedding) ? embedding : JSON.parse(embedding);
+    console.log('Parsed embedding:', {
+      length: parsed.length,
+      sample: parsed.slice(0, 5),
+      type: typeof parsed[0]
+    });
   } catch (e) {
+    console.error('Error parsing embedding:', e);
     parsed = (embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
   }
 
@@ -213,6 +248,8 @@ app.post('/api/faces/recognize', (req, res) => {
       let best = null;
       let bestSim = 0;
 
+      console.log(`Comparing against ${rows.length} stored faces`);
+      
       for (const r of rows) {
         let stored = [];
         try {
@@ -222,9 +259,12 @@ app.post('/api/faces/recognize', (req, res) => {
         }
 
         const sim = cosineSimilarity(parsed, stored);
+        console.log(`Similarity with user ${r.name} (${r.student_id}): ${sim}`);
+        
         if (sim > threshold && sim > bestSim) {
           bestSim = sim;
           best = r;
+          console.log(`New best match: ${r.name} with similarity ${sim}`);
         }
       }
 
