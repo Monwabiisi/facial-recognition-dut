@@ -3,6 +3,7 @@ import React, { useState, useCallback } from 'react';
 import { RealtimeCamera } from '../components/RealtimeCamera';
 import { useAuth } from '../contexts/AuthContext';
 import faceService, { RecognitionResult } from '../services/faceService';
+import { markPresent } from '../services/attendanceService';
 
 interface AttendanceRecord {
   id: string;
@@ -20,69 +21,83 @@ const Camera: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Ready');
 
-  // Handle face detection from camera
-  const handleFaceDetected = useCallback(async (canvas: HTMLCanvasElement, descriptors: Float32Array[]) => {
-    if (isProcessing || descriptors.length === 0) return;
-
+  // Called when RealtimeCamera reports a recognized face
+  const handleFaceRecognized = useCallback(async (result: { name: string; student_id: string; confidence: number; user_id?: number } | null) => {
+    if (isProcessing) return;
     try {
       setIsProcessing(true);
       setError(null);
-      setStatus('Processing face...');
 
-      // Use the first (best) face descriptor
-      const descriptor = descriptors[0];
-
-      if (!faceService.validateEmbedding(descriptor)) {
-        setError('Face detection quality too low. Please look directly at the camera.');
+      if (!result) {
+        setStatus('No face recognized');
         return;
       }
 
-      if (mode === 'recognize') {
-        // Recognition mode
-        const result = await faceService.recognizeFace(descriptor);
-        setLastResult(result);
+      const recogn: RecognitionResult = {
+        recognized: true,
+        user_id: undefined,
+        name: result.name,
+        student_id: result.student_id,
+        similarity: result.confidence,
+        confidence: result.confidence,
+      } as RecognitionResult;
 
-        if (result.recognized) {
-          setStatus(`✅ Recognized: ${result.name} (${result.student_id})`);
-          
-          // Add to attendance records
-          const record: AttendanceRecord = {
-            id: Date.now().toString(),
-            timestamp: new Date(),
-            result,
-            confidence: result.confidence,
-          };
-          
-          setAttendanceRecords(prev => [record, ...prev.slice(0, 9)]); // Keep last 10 records
-        } else {
-          setStatus(`❌ Face not recognized (${(result.similarity * 100).toFixed(1)}% similarity)`);
+      setLastResult(recogn);
+      setStatus(`✅ Recognized: ${result.name} (${result.student_id})`);
+
+      const record: AttendanceRecord = {
+        id: Date.now().toString(),
+        timestamp: new Date(),
+        result: recogn,
+        confidence: recogn.confidence,
+      };
+
+      setAttendanceRecords(prev => [record, ...prev.slice(0, 9)]);
+
+      // Mark present locally (deduplicates by day)
+      try {
+        markPresent(result.student_id, 'face-api');
+      } catch (e) {
+        console.warn('Failed to mark present locally', e);
+      }
+
+      // Also attempt to post attendance to server if we have a numeric user_id
+      if (result.user_id) {
+        try {
+          // Fetch active sessions and pick the first active one
+          const sres = await fetch('/api/attendance/sessions');
+          if (sres.ok) {
+            const sessions = await sres.json();
+            const active = sessions.find((s: any) => s.is_active === 1 || s.is_active === true) || sessions[0];
+            if (active) {
+              const body = { session_id: active.id, user_id: result.user_id, status: 'present', confidence: result.confidence };
+              const rec = await fetch('/api/attendance/record', {
+                method: 'POST',
+                body: JSON.stringify(body),
+                headers: { 'Content-Type': 'application/json' }
+              });
+              if (rec.ok) {
+                console.log('Attendance recorded on server for user', result.user_id);
+              } else {
+                console.warn('Failed to record attendance on server', await rec.text());
+              }
+            } else {
+              console.warn('No active attendance session found; skipping server attendance');
+            }
+          }
+        } catch (e) {
+          console.warn('Error posting attendance to server', e);
         }
-      } else if (mode === 'enroll' && user) {
-        // Enrollment mode (teachers only)
-        const imageBlob = await faceService.canvasToBlob(canvas);
-        
-        const enrollmentResult = await faceService.enrollFace({
-          user_id: user.id,
-          embedding: descriptor,
-          imageBlob,
-          confidence: 1.0,
-        });
-
-        setStatus(`✅ Face enrolled successfully for ${user.name}`);
-        console.log('Enrollment result:', enrollmentResult);
       }
     } catch (error) {
-      console.error('Face processing error:', error);
-      setError(error instanceof Error ? error.message : 'Face processing failed');
-      setStatus('Error processing face');
+      console.error('Face recognition handler error:', error);
+      setError(error instanceof Error ? error.message : 'Recognition handler failed');
+      setStatus('Error processing recognition');
     } finally {
       setIsProcessing(false);
-      // Auto-reset status after 3 seconds
-      setTimeout(() => {
-        if (!isProcessing) setStatus('Ready');
-      }, 3000);
+      setTimeout(() => { if (!isProcessing) setStatus('Ready'); }, 3000);
     }
-  }, [mode, user, isProcessing]);
+  }, [isProcessing]);
 
   const handleCameraError = useCallback((errorMessage: string) => {
     setError(errorMessage);
@@ -145,9 +160,9 @@ const Camera: React.FC = () => {
         <div className="lg:col-span-2">
           <div className="bg-white rounded-lg shadow-lg p-4">
             <RealtimeCamera
-              onFaceDetected={handleFaceDetected}
-              onError={handleCameraError}
-              isRecognitionMode={mode === 'recognize'}
+              onFaceRecognized={handleFaceRecognized}
+              onFaceEnrolled={() => { /* no-op */ }}
+              enrollMode={mode === 'enroll'}
               width={640}
               height={480}
             />

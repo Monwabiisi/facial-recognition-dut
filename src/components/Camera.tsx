@@ -89,6 +89,32 @@ const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, onVideoRead
             .withFaceLandmarks()
             .withFaceDescriptors();
 
+          // Draw detections + landmarks onto overlay canvas so face pins show
+          const canvas = canvasRef.current;
+          if (canvas && videoRef.current) {
+            const video = videoRef.current;
+            const displayWidth = video.clientWidth || video.videoWidth || opts.inputSize || 640;
+            const displayHeight = video.clientHeight || video.videoHeight || opts.inputSize || 480;
+            const displaySizeCss = { width: displayWidth, height: displayHeight };
+
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.round(displayWidth * dpr);
+            canvas.height = Math.round(displayHeight * dpr);
+            canvas.style.width = `${displayWidth}px`;
+            canvas.style.height = `${displayHeight}px`;
+
+            faceapi.matchDimensions(canvas, displaySizeCss as any);
+
+            const resizedDetections = faceapi.resizeResults(results, displaySizeCss as any);
+            const ctx = canvas.getContext('2d');
+            if (ctx) {
+              ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              faceapi.draw.drawDetections(canvas, resizedDetections);
+              faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
+            }
+          }
+
           const out: DetectionResult[] = (results || []).map((r) => ({
             x: r.detection.box.x,
             y: r.detection.box.y,
@@ -136,8 +162,19 @@ const Camera: React.FC<Props> = ({ onFaceDetected, isActive = false, onVideoRead
     return (
       <div className="relative aspect-video rounded-lg overflow-hidden bg-gray-900">
         <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover" />
-        {/* Hidden canvas kept for future drawing */}
-        <canvas ref={canvasRef} style={{ display: 'none' }} />
+        {/* Overlay canvas for drawing detections & landmarks */}
+        <canvas
+          ref={canvasRef}
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            pointerEvents: 'none',
+            zIndex: 2,
+          }}
+        />
         {!modelsLoaded && (
           <div className="absolute inset-0 flex items-center justify-center bg-gray-900 bg-opacity-75">
             <div className="text-white animate-pulse">Loading face model...</div>

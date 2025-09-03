@@ -48,29 +48,113 @@ export function useCamera() {
         },
       };
 
-      const stream = await navigator.mediaDevices.getUserMedia(constraints);
-      streamRef.current = stream;
-      v.srcObject = stream;
-
-      // Wait until metadata is ready before playing to avoid “play() interrupted” spam
-      await new Promise<void>((resolve) => {
-        if (v.readyState >= 1) return resolve();
-        const onMeta = () => {
-          v.removeEventListener("loadedmetadata", onMeta);
-          resolve();
-        };
-        v.addEventListener("loadedmetadata", onMeta, { once: true });
-      });
-
-      try {
-        await v.play();
-      } catch {
-        // tiny delay + retry once fixes most browsers’ race
-        await new Promise((r) => setTimeout(r, 50));
-        await v.play();
+      // Quick check for available video devices before attempting getUserMedia
+      if (navigator.mediaDevices && (navigator.mediaDevices as any).enumerateDevices) {
+        try {
+          const devs = await navigator.mediaDevices.enumerateDevices();
+          const hasVideo = devs.some((d) => d.kind === 'videoinput');
+          if (!hasVideo) throw new Error('No camera found');
+        } catch (enumErr) {
+          // If enumerateDevices is blocked or fails, we'll continue and let getUserMedia report a clearer error
+          console.warn('Could not enumerate devices or no camera detected:', enumErr);
+        }
       }
 
-      setReady(true);
+      // Retry loop for flaky camera startup (some devices/browsers fail briefly)
+      const MAX_ATTEMPTS = 5;
+      let attempt = 0;
+      let lastErr: any = null;
+
+      while (attempt < MAX_ATTEMPTS) {
+        attempt += 1;
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia(constraints);
+          streamRef.current = stream;
+          v.srcObject = stream;
+
+          // Wait until metadata is ready before playing to avoid “play() interrupted” spam
+          await new Promise<void>((resolve, reject) => {
+            if (v.readyState >= 1) return resolve();
+            const onMeta = () => {
+              v.removeEventListener("loadedmetadata", onMeta);
+              resolve();
+            };
+            const metaTimer = setTimeout(() => {
+              v.removeEventListener("loadedmetadata", onMeta);
+              reject(new Error('Timeout waiting for video metadata'));
+            }, 3000);
+            // increase metadata wait for slow devices
+            // (we keep the setTimeout above but also allow a longer final play timeout below)
+            v.addEventListener("loadedmetadata", onMeta, { once: true });
+          });
+
+          // Attempt to play with small exponential backoff retries
+          const PLAY_ATTEMPTS = 5;
+          let playOk = false;
+          for (let p = 0; p < PLAY_ATTEMPTS; p++) {
+            try {
+              await v.play();
+              playOk = true;
+              break;
+            } catch (playErr) {
+              // Wait progressively longer before retrying
+              const wait = 100 * Math.pow(2, p); // 100ms, 200ms, 400ms, ...
+              // console.debug(`play attempt ${p + 1} failed, waiting ${wait}ms`);
+              // eslint-disable-next-line no-await-in-loop
+              await new Promise((r) => setTimeout(r, wait));
+            }
+          }
+
+          if (!playOk) throw new Error('Timeout starting video source');
+
+          setReady(true);
+          lastErr = null;
+          break; // success
+        } catch (e) {
+          lastErr = e;
+          console.warn(`Camera start attempt ${attempt} failed:`, e);
+          // Stop any partial stream before next attempt
+          if (streamRef.current) {
+            streamRef.current.getTracks().forEach((t) => t.stop());
+            streamRef.current = null;
+          }
+          v.srcObject = null;
+          // small backoff before retrying
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((r) => setTimeout(r, 200 * attempt));
+        }
+      }
+
+      // Final fallback: try a very basic getUserMedia request once more before giving up
+      if (lastErr) {
+        try {
+          console.warn('Final fallback: trying minimal camera constraints before failing');
+          const fallbackStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+          streamRef.current = fallbackStream;
+          const v = videoRef.current!;
+          v.srcObject = fallbackStream;
+          await new Promise<void>((resolve, reject) => {
+            if (v.readyState >= 1) return resolve();
+            const onMeta = () => {
+              v.removeEventListener('loadedmetadata', onMeta);
+              resolve();
+            };
+            const metaTimer = setTimeout(() => {
+              v.removeEventListener('loadedmetadata', onMeta);
+              reject(new Error('Timeout waiting for video metadata (fallback)'));
+            }, 7000);
+            v.addEventListener('loadedmetadata', onMeta, { once: true });
+          });
+          await v.play();
+          setReady(true);
+          lastErr = null;
+        } catch (fbErr) {
+          console.warn('Fallback camera attempt failed:', fbErr);
+          // rethrow the original or fallback error below
+        }
+      }
+
+      if (lastErr) throw lastErr;
     } catch (e: any) {
       console.error('Camera access error:', e);
       

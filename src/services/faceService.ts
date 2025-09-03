@@ -184,21 +184,38 @@ class FaceService {
     threshold: number = 0.6
   ): Promise<RecognitionResult> {
     try {
-      const formData = new FormData();
-      formData.append('embedding', this.serializeEmbedding(embedding));
-      formData.append('threshold', threshold.toString());
+      let response: Response;
 
+      // If an image blob is provided, use multipart/form-data (keep existing behavior)
       if (imageBlob) {
+        const formData = new FormData();
+        formData.append('embedding', this.serializeEmbedding(embedding));
+        formData.append('threshold', threshold.toString());
         formData.append('image', imageBlob, `recognition_${Date.now()}.jpg`);
-      }
 
-      const response = await fetch(`${API_BASE}/faces/recognize`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${authService.getToken()}`,
-        },
-        body: formData,
-      });
+        response = await fetch(`${API_BASE}/faces/recognize`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authService.getToken()}`,
+          },
+          body: formData,
+        });
+      } else {
+        // If no image is sent, use application/json so express.json() will parse req.body.embedding
+        const payload = {
+          embedding: this.serializeEmbedding(embedding),
+          threshold: threshold
+        };
+
+        response = await fetch(`${API_BASE}/faces/recognize`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${authService.getToken()}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(payload),
+        });
+      }
 
       if (!response.ok) {
         const error = await response.json();

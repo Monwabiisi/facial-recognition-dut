@@ -19,6 +19,7 @@ interface EnrollmentData {
   studentId: string;
   email: string;
   capturedPhotos: string[]; // base64 encoded photos
+  capturedEmbeddings?: number[][];
 }
 
 export default function CameraPage() {
@@ -36,7 +37,8 @@ export default function CameraPage() {
     name: '',
     studentId: '',
     email: '',
-    capturedPhotos: []
+  capturedPhotos: [],
+  capturedEmbeddings: []
   });
   const [enrollmentStep, setEnrollmentStep] = useState<'form' | 'capture'>('form');
   const [sessionStats, setSessionStats] = useState({
@@ -44,7 +46,12 @@ export default function CameraPage() {
     unknown: 0,
     avgConfidence: 0
   });
+  // Refs to prevent counting the same face every frame
+  const lastUnknownAtRef = useRef<number>(0);
+  const lastRecognizedAtRef = useRef<number>(0);
+  const lastRecognizedNameRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const lastDetectionRef = useRef<any>(null);
 
   const audioRef = useRef<HTMLAudioElement>(null);
 
@@ -85,9 +92,11 @@ export default function CameraPage() {
     setIsScanning(faces.length > 0);
     
     // Store faces data for enrollment
-    if (faces.length === 1) {
+    if (faces.length > 0) {
+      // mark scanning active when we have at least one face
+      setIsScanning(true);
       // For recognition mode
-      if (mode === 'recognize') {
+  if (mode === 'recognize') {
         try {
           const canvas = document.createElement('canvas');
           const video = document.querySelector('video');
@@ -125,43 +134,72 @@ export default function CameraPage() {
           }
 
           if (data && data.recognized) {
+            // Normalize confidence: backend may return 0..1 (fraction) or 0..100 (percent)
+            let rawConf = data.confidence ?? data.similarity ?? 0;
+            let conf = Number(rawConf) || 0;
+            if (conf > 0 && conf <= 1) conf = conf * 100; // fraction -> percent
+            if (conf > 100) conf = 100; // clamp
+
             const result: RecognitionResult = {
               name: data.name || data.full_name || data.user_name || '',
               studentId: (data.studentId || data.student_id || data.student || ''),
-              confidence: data.confidence || data.similarity || 0,
+              confidence: conf,
               timestamp: new Date()
             };
 
-            setCurrentRecognition(result);
-            setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
-            setSessionStats(prev => ({
-              recognized: prev.recognized + 1,
-              unknown: prev.unknown,
-              avgConfidence: (prev.avgConfidence + result.confidence) / 2
-            }));
+            const now = Date.now();
+            // Only count a recognition if it's a different user or after a short cooldown
+            const shouldCountRecognition = (lastRecognizedNameRef.current !== result.name) || (now - lastRecognizedAtRef.current > 2000);
 
-            playSound('success');
+            console.debug('Recognition result:', { data, result, shouldCountRecognition, lastRecognizedName: lastRecognizedNameRef.current, lastRecognizedAt: lastRecognizedAtRef.current });
+
+            setCurrentRecognition(result);
+            if (shouldCountRecognition) {
+              lastRecognizedAtRef.current = now;
+              lastRecognizedNameRef.current = result.name;
+              setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
+              setSessionStats(prev => ({
+                recognized: prev.recognized + 1,
+                unknown: prev.unknown,
+                avgConfidence: (prev.avgConfidence + result.confidence) / 2
+              }));
+              playSound('success');
+            } else {
+              // Still update the UI but don't increment counter due to cooldown
+              console.debug('Recognition ignored for counting due to cooldown');
+            }
           } else {
+            // Unrecognized face -> clear current recognition so overlay shows Unknown
             setCurrentRecognition(null);
-            setSessionStats(prev => ({
-              ...prev,
-              unknown: prev.unknown + 1
-            }));
-            playSound('error');
+            // Debounce unknown counting so it doesn't increment every frame
+            const now = Date.now();
+            const UNKNOWN_COOLDOWN_MS = 3000;
+            if (now - lastUnknownAtRef.current > UNKNOWN_COOLDOWN_MS) {
+              lastUnknownAtRef.current = now;
+              setSessionStats(prev => ({
+                ...prev,
+                unknown: prev.unknown + 1
+              }));
+              playSound('error');
+            } else {
+              // For debugging, show when an uncounted unknown occurs
+              console.debug('Unknown face detected but not counted (cooldown)');
+            }
           }
         } catch (error) {
           console.error('Recognition error:', error);
           setCurrentRecognition(null);
           playSound('error');
         }
-      }
+  }
       // For enrollment mode
       else if (mode === 'enroll' && enrollmentStep === 'capture') {
         // The face is ready to be captured
-        setIsScanning(true);
+        // keep latest detection so capture button can use its embedding
+        lastDetectionRef.current = faces[0];
       }
     } else {
-      setIsScanning(false);
+  setIsScanning(false);
     }
   }, [mode, playSound, enrollmentStep]);
 
@@ -186,7 +224,7 @@ export default function CameraPage() {
     const context = canvasRef.current.getContext('2d');
     if (!context) return;
 
-    // Capture the current frame
+  // Capture the current frame
     const video = document.querySelector('video');
     if (!video) return;
 
@@ -199,7 +237,20 @@ export default function CameraPage() {
     
     setEnrollmentData(prev => ({
       ...prev,
-      capturedPhotos: [...prev.capturedPhotos, photo]
+      capturedPhotos: [...prev.capturedPhotos, photo],
+      // if an embedding is available from the last detection, save it too
+      capturedEmbeddings: (() => {
+        try {
+          const det = lastDetectionRef.current;
+            if (det && det.embedding) {
+            const raw = det.embedding instanceof Float32Array ? Array.from(det.embedding) : Array.from(new Float32Array(det.embedding));
+            const emb = raw.map(v => Number(v)) as number[];
+            const cur = prev.capturedEmbeddings || [];
+            return [...cur, emb];
+          }
+        } catch (e) {}
+        return prev.capturedEmbeddings || [];
+      })()
     }));
 
     playSound('success');
@@ -229,12 +280,49 @@ export default function CameraPage() {
         name: '',
         studentId: '',
         email: '',
-        capturedPhotos: []
+  capturedPhotos: [],
+  capturedEmbeddings: []
       });
       alert(`✅ Successfully enrolled ${enrollmentData.name} with ${enrollmentData.capturedPhotos.length} photos!`);
     } catch (error) {
       alert("Failed to complete enrollment. Please try again.");
       console.error("Enrollment error:", error);
+    }
+  };
+
+  const saveEnrollment = async () => {
+    if (!enrollmentData.capturedEmbeddings || enrollmentData.capturedEmbeddings.length === 0) {
+      alert('No embeddings captured to enroll. Please capture faces first.');
+      return;
+    }
+
+    try {
+      const userId = Number(enrollmentData.studentId);
+      // We'll send each embedding + the first photo as a representative image
+      for (let i = 0; i < enrollmentData.capturedEmbeddings.length; i++) {
+        const emb = enrollmentData.capturedEmbeddings[i];
+        const photo = enrollmentData.capturedPhotos[i] || enrollmentData.capturedPhotos[0];
+
+        // Convert base64 data URL to Blob
+        const res = await fetch(photo);
+        const blob = await res.blob();
+
+        const floatEmb = new Float32Array(emb);
+
+        await faceService.enrollFace({
+          user_id: userId,
+          embedding: floatEmb,
+          imageBlob: blob,
+        });
+      }
+
+      alert('Enrollment saved to server successfully');
+      // reset
+      setEnrollmentStep('form');
+      setEnrollmentData({ name: '', studentId: '', email: '', capturedPhotos: [], capturedEmbeddings: [] });
+    } catch (e) {
+      console.error('Save enrollment failed', e);
+      alert('Failed to save enrollment to server');
     }
   };
 
@@ -414,6 +502,14 @@ export default function CameraPage() {
                           onClick={completeEnrollment}
                         >
                           ✅ Complete
+                        </CyberButton>
+                      )}
+                      {enrollmentData.capturedEmbeddings && enrollmentData.capturedEmbeddings.length > 0 && (
+                        <CyberButton
+                          variant="primary"
+                          onClick={saveEnrollment}
+                        >
+                          💾 Save Enrollment
                         </CyberButton>
                       )}
                       <CyberButton

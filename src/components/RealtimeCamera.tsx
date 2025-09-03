@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useState, useCallback } from 'react';
 import * as faceapi from 'face-api.js';
 import { useCamera } from '../hooks/useCamera';
+import faceService from '../services/faceService';
 
 interface FaceRecognitionCameraProps {
   onFaceRecognized?: (result: { name: string; student_id: string; confidence: number }) => void;
@@ -46,6 +47,7 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
   const [faceDescriptors, setFaceDescriptors] = useState<FaceData[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [status, setStatus] = useState<string>('Initializing...');
+  const lastDetectionRef = useRef<any>(null);
 
   // Load face-api models with better error handling
   useEffect(() => {
@@ -88,7 +90,8 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
       if (response.ok) {
         const data = await response.json();
         const faceData = data.map((item: any) => ({
-          id: item.student_id || item.id.toString(),
+          id: item.id?.toString() || String(item.user_id || item.student_id),
+          user_id: item.user_id,
           name: item.name,
           student_id: item.student_id,
           descriptor: new Float32Array(JSON.parse(item.embedding))
@@ -175,6 +178,9 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
             current.detection.score > best.detection.score ? current : best
           );
 
+          // keep reference for quick-enroll
+          lastDetectionRef.current = bestDetection;
+
           if (enrollMode && enrollData) {
             // Enrollment mode
             handleEnrollment(bestDetection);
@@ -253,7 +259,7 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
 
   // distance threshold derived from desired confidence. For 60% confidence -> distance <= 0.4
   const threshold = 0.4;
-    if (bestMatch && bestMatch.distance < threshold) {
+  if (bestMatch && bestMatch.distance < threshold) {
       const confidence = Math.max(0, 1 - bestMatch.distance);
       
       // Draw recognition result using resized coordinates so the overlay lines up with the video
@@ -270,7 +276,8 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
           name: bestMatch.face.name,
           student_id: bestMatch.face.student_id,
           confidence,
-        });
+          user_id: (bestMatch.face as any).user_id || undefined,
+        } as any);
       }
 
       setStatus(`Recognized: ${bestMatch.face.name}`);
@@ -403,6 +410,49 @@ const RealtimeCamera: React.FC<FaceRecognitionCameraProps> = ({
           </div>
         </div>
       )}
+
+      {/* Quick Enroll (dev helper) */}
+      <div className="absolute bottom-6 right-6 z-30 pointer-events-auto">
+        <button
+          onClick={async () => {
+            if (!lastDetectionRef.current) {
+              setStatus('No detection to enroll');
+              return;
+            }
+            const idStr = prompt('Enter user id to enroll this face as (numeric user_id):');
+            if (!idStr) return;
+            const userId = Number(idStr);
+            if (!userId) { alert('Invalid user id'); return; }
+
+            try {
+              const descriptor = lastDetectionRef.current.descriptor as Float32Array;
+              if (!descriptor) { alert('No descriptor available'); return; }
+              const blob = await (async () => {
+                const v = videoRef.current;
+                if (!v) return null;
+                const tmp = document.createElement('canvas');
+                tmp.width = v.videoWidth || width;
+                tmp.height = v.videoHeight || height;
+                const tctx = tmp.getContext('2d');
+                if (!tctx) return null;
+                tctx.drawImage(v, 0, 0, tmp.width, tmp.height);
+                return await new Promise<Blob | null>((res) => tmp.toBlob(b => res(b), 'image/jpeg', 0.8));
+              })();
+
+              await faceService.enrollFace({ user_id: userId, embedding: descriptor, imageBlob: blob || undefined });
+              setStatus('Quick-enroll successful');
+              // reload descriptors
+              await loadFaceData();
+            } catch (e) {
+              console.error('Quick enroll failed', e);
+              setStatus('Quick-enroll failed');
+            }
+          }}
+          className="px-3 py-2 bg-purple-600 text-white rounded-md shadow hover:bg-purple-700"
+        >
+          Quick Enroll
+        </button>
+      </div>
 
       {/* Debug: small indicators for troubleshooting */}
       <div className="absolute top-4 left-4 bg-black bg-opacity-50 text-xs text-white px-2 py-1 rounded">
