@@ -87,9 +87,9 @@ export default function RegisterPage() {
   // Use the password the user entered in the form
   await register(formData.name, formData.email.toLowerCase(), formData.password, formData.studentId);
 
-      // Show simple success message then redirect to login
-      setErrors({ general: 'Registration complete. Please login with your DUT account.' });
-      setTimeout(() => navigate('/login'), 1400);
+      // Show success message with face enrollment prompt
+      setErrors({ general: '✅ Registration complete! Please login to enroll your face for recognition.' });
+      setTimeout(() => navigate('/login'), 2000);
     } catch (error: any) {
       setErrors({ general: error.message || 'Registration failed' });
     } finally {

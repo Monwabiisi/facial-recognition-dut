@@ -5,6 +5,7 @@ import DUTLogo from '../components/DUTLogo';
 import CyberButton from '../components/CyberButton';
 import CyberInput from '../components/CyberInput';
 import ParticleBackground from '../components/ParticleBackground';
+import AdminKeyLogin from '../components/AdminKeyLogin';
 
 export default function LoginPage() {
   const [formData, setFormData] = useState({
@@ -13,8 +14,9 @@ export default function LoginPage() {
   });
   const [errors, setErrors] = useState<{[key: string]: string}>({});
   const [loading, setLoading] = useState(false);
+  const [showAdminKeyModal, setShowAdminKeyModal] = useState(false);
   
-  const { login } = useAuth();
+  const { login, loginWithAdminKey, checkUserFaceEnrollments } = useAuth();
   const navigate = useNavigate();
 
   const handleInputChange = (field: string, value: string) => {
@@ -54,46 +56,49 @@ export default function LoginPage() {
       // Call real login
       await login(formData.email.toLowerCase(), formData.password);
 
-  // Role-based redirect: admin -> admin dashboard
-  const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
-  const usersResp = await fetch(`${API_BASE}/users`);
-      let role = '';
-      if (usersResp.ok) {
-        const usersList = await usersResp.json();
-        const currentUser = usersList.find((u: any) => (u.email || '').toLowerCase() === formData.email.toLowerCase() || (u.student_id || '').toLowerCase() === formData.email.toLowerCase().split('@')[0]);
-        role = currentUser?.role || '';
-      } else {
-        // If users endpoint failed, fallback to dashboard for safety
-        role = '';
-      }
-      if (role === 'teacher' || role === 'admin') {
-        navigate('/admin');
-      } else {
-        // After login, check how many embeddings this user has and redirect to enrollment if < 10
-        try {
-          const resp = await fetch(`${API_BASE}/faces`);
-          if (resp.ok) {
-            const all = await resp.json();
-            const userEmail = formData.email.toLowerCase();
-            // match by email field from joined query
-            const userEmbeddings = all.filter((r: any) => (r.email || '').toLowerCase() === userEmail || (r.student_id || '').toLowerCase() === userEmail.split('@')[0]);
-            if (userEmbeddings.length < 10) {
-              navigate('/enroll');
-            } else {
-              navigate('/dashboard');
-            }
-          } else {
-            navigate('/dashboard');
-          }
-        } catch (err) {
+      // Check user's face enrollments after successful login
+      try {
+        const faceEnrollments = await checkUserFaceEnrollments();
+        
+        // If user has no face enrollments, redirect to profile for enrollment
+        if (!faceEnrollments.hasEnrollments) {
+          navigate('/profile?firstLogin=true');
+        } else {
+          // User has face enrollments, redirect to dashboard
           navigate('/dashboard');
         }
+      } catch (error) {
+        console.error('Error checking face enrollments:', error);
+        // Fallback to dashboard if check fails
+        navigate('/dashboard');
       }
     } catch (error: any) {
       setErrors({ general: error.message || 'Login failed' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleAdminKeyLogin = async (pin: string) => {
+    try {
+      await loginWithAdminKey(pin);
+      setShowAdminKeyModal(false);
+      // Admin key login always redirects to admin dashboard
+      navigate('/admin');
+    } catch (error: any) {
+      setErrors({ general: error.message || '❌ Invalid Admin Key.' });
+      throw error; // Re-throw so the AdminKeyLogin component can handle it
+    }
+  };
+
+  const handleAdminKeySuccess = (user: any) => {
+    setShowAdminKeyModal(false);
+    // Admin key login always redirects to admin dashboard
+    navigate('/admin');
+  };
+
+  const handleAdminKeyError = (error: string) => {
+    setErrors({ general: error });
   };
 
   return (
@@ -224,6 +229,34 @@ export default function LoginPage() {
               🔒 FACE ID LOGIN
             </CyberButton>
 
+            {/* Admin Key Login Option */}
+            <div className="relative">
+              <div className="absolute inset-0 flex items-center">
+                <div className="w-full border-t border-white/10"></div>
+              </div>
+              <div className="relative flex justify-center text-sm">
+                <span className="px-4 bg-transparent text-gray-400 font-mono">
+                  ADMIN ACCESS
+                </span>
+              </div>
+            </div>
+
+            <CyberButton
+              variant="secondary"
+              fullWidth
+              size="lg"
+              onClick={() => setShowAdminKeyModal(true)}
+              icon={
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
+                </svg>
+              }
+              glowColor="#FF0000"
+              className="border-red-500/30 hover:border-red-400/50 bg-red-600/20 hover:bg-red-600/30"
+            >
+              🔑 ADMIN KEY LOGIN
+            </CyberButton>
+
             {/* Register Link */}
             <div className="text-center">
               <Link 
@@ -265,6 +298,15 @@ export default function LoginPage() {
       <div className="fixed top-4 right-4 w-12 h-12 border-r-2 border-t-2 border-cyan-400/50 pointer-events-none"></div>
       <div className="fixed bottom-4 left-4 w-12 h-12 border-l-2 border-b-2 border-cyan-400/50 pointer-events-none"></div>
       <div className="fixed bottom-4 right-4 w-12 h-12 border-r-2 border-b-2 border-cyan-400/50 pointer-events-none"></div>
+
+      {/* Admin Key Login Modal */}
+      {showAdminKeyModal && (
+        <AdminKeyLogin
+          onSuccess={handleAdminKeySuccess}
+          onError={handleAdminKeyError}
+          onClose={() => setShowAdminKeyModal(false)}
+        />
+      )}
     </div>
   );
 }

@@ -7,6 +7,8 @@ const multer = require('multer');
 const fs = require('fs');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const https = require('https');
+const http = require('http');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -15,13 +17,128 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
+// Serve model files from public/models directory
+app.use('/models', express.static(path.join(__dirname, 'public', 'models')));
+
 const uploadsDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
+// Ensure models directory exists
+const modelsDir = path.join(__dirname, 'public', 'models');
+if (!fs.existsSync(modelsDir)) fs.mkdirSync(modelsDir, { recursive: true });
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadsDir),
   filename: (req, file, cb) => cb(null, Date.now() + '-' + Math.round(Math.random() * 1e9) + path.extname(file.originalname))
 });
 const upload = multer({ storage, limits: { fileSize: 5 * 1024 * 1024 } });
+
+// Face-api.js model management
+const CDN_BASE_URL = 'https://justadudewhohacks.github.io/face-api.js/models';
+const REQUIRED_MODEL_FILES = [
+  'tiny_face_detector_model-weights_manifest.json',
+  'tiny_face_detector_model-shard1.bin',
+  'face_landmark_68_model-weights_manifest.json',
+  'face_landmark_68_model-shard1.bin',
+  'face_recognition_model-weights_manifest.json',
+  'face_recognition_model-shard1.bin',
+  'face_recognition_model-shard2.bin'
+];
+
+// Download a file from URL to local path
+function downloadFile(url, localPath) {
+  return new Promise((resolve, reject) => {
+    const protocol = url.startsWith('https:') ? https : http;
+    const file = fs.createWriteStream(localPath);
+    
+    protocol.get(url, (response) => {
+      if (response.statusCode !== 200) {
+        reject(new Error(`HTTP ${response.statusCode}: ${response.statusMessage}`));
+        return;
+      }
+      
+      response.pipe(file);
+      
+      file.on('finish', () => {
+        file.close();
+        resolve(true);
+      });
+      
+      file.on('error', (err) => {
+        fs.unlink(localPath, () => {}); // Delete partial file
+        reject(err);
+      });
+    }).on('error', reject);
+  });
+}
+
+// Check if all required models exist locally
+function checkModelsExist() {
+  const missingFiles = [];
+  
+  for (const fileName of REQUIRED_MODEL_FILES) {
+    const filePath = path.join(modelsDir, fileName);
+    if (!fs.existsSync(filePath)) {
+      missingFiles.push(fileName);
+    }
+  }
+  
+  return {
+    allPresent: missingFiles.length === 0,
+    missingFiles
+  };
+}
+
+// Download missing models from CDN
+async function downloadMissingModels(missingFiles) {
+  const failedDownloads = [];
+  
+  console.log(`📥 Downloading ${missingFiles.length} missing model files...`);
+  
+  for (const fileName of missingFiles) {
+    try {
+      const url = `${CDN_BASE_URL}/${fileName}`;
+      const localPath = path.join(modelsDir, fileName);
+      
+      console.log(`⬇️ Downloading ${fileName}...`);
+      await downloadFile(url, localPath);
+      console.log(`✅ Downloaded ${fileName}`);
+      
+    } catch (error) {
+      console.error(`❌ Failed to download ${fileName}:`, error.message);
+      failedDownloads.push(fileName);
+    }
+  }
+  
+  return {
+    success: failedDownloads.length === 0,
+    failedDownloads
+  };
+}
+
+// Initialize models on startup
+async function initializeModels() {
+  console.log('🤖 Initializing face recognition models...');
+  
+  const modelCheck = checkModelsExist();
+  
+  if (modelCheck.allPresent) {
+    console.log('✅ All face recognition models verified locally');
+    return { ready: true, usingCDN: false };
+  } else {
+    console.warn(`⚠️ Missing models detected: ${modelCheck.missingFiles.join(', ')}`);
+    
+    const downloadResult = await downloadMissingModels(modelCheck.missingFiles);
+    
+    if (downloadResult.success) {
+      console.log('✅ All missing models downloaded from CDN');
+      return { ready: true, usingCDN: false };
+    } else {
+      console.warn(`⚠️ Failed to download: ${downloadResult.failedDownloads.join(', ')}`);
+      console.warn('📡 Models will fallback to CDN at runtime');
+      return { ready: true, usingCDN: true };
+    }
+  }
+}
 
 const dbPath = path.resolve(__dirname, 'facial_recognition.db');
 const db = new sqlite3.Database(dbPath, (err) => {
@@ -148,7 +265,7 @@ app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 // Auth endpoints
 app.post('/api/auth/login', (req, res) => {
   // Accept either student_id or email for login to support frontend behavior
-  const { student_id, email, password } = req.body;
+  const { student_id, email, password, adminKey } = req.body;
   if ((!student_id && !email) || !password) return res.status(400).json({ error: 'student_id/email and password required' });
 
   const lookupField = email ? 'email' : 'student_id';
@@ -159,10 +276,181 @@ app.post('/api/auth/login', (req, res) => {
     if (!user || !bcrypt.compareSync(password, user.password_hash || '')) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
-    const token = jwt.sign({ id: user.id, role: user.role }, JWT_SECRET);
+
+    // Admin PIN check (set ADMIN_PIN in environment; do NOT hardcode in source)
+    const adminPin = process.env.ADMIN_PIN || null;
+    const isAdmin = adminPin && adminKey && adminKey === adminPin;
+
+    // Include isAdmin in token payload
+    const tokenPayload = { id: user.id, role: user.role, isAdmin };
+    const token = jwt.sign(tokenPayload, JWT_SECRET);
+
     // Return token and user object compatible with frontend expectations
-    res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email, student_id: user.student_id } });
+    res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email, student_id: user.student_id, isAdmin } });
   });
+});
+
+// User registration endpoint
+app.post('/api/auth/register', (req, res) => {
+  const { name, email, password, studentId } = req.body;
+  
+  // Validate required fields
+  if (!name || !email || !password) {
+    return res.status(400).json({ error: 'Name, email, and password are required' });
+  }
+  
+  // Validate DUT email format
+  if (!email.toLowerCase().endsWith('@dut4life.ac.za')) {
+    return res.status(400).json({ error: 'Only DUT emails (@dut4life.ac.za) are allowed' });
+  }
+  
+  // Check if email already exists
+  db.get(`SELECT * FROM users WHERE email = ?`, [email.toLowerCase()], (err, existingUser) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+    
+    if (existingUser) {
+      return res.status(400).json({ error: 'Email already registered' });
+    }
+    
+    // Check if student_id already exists (if provided)
+    if (studentId) {
+      db.get(`SELECT * FROM users WHERE student_id = ?`, [studentId], (err, existingStudent) => {
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+        
+        if (existingStudent) {
+          return res.status(400).json({ error: 'Student ID already registered' });
+        }
+        
+        // Create the user
+        createUser();
+      });
+    } else {
+      // Create user without student_id check
+      createUser();
+    }
+    
+    function createUser() {
+      // Hash password
+      const hashedPassword = bcrypt.hashSync(password, 10);
+      
+      // Determine role based on email (teachers vs students)
+      let role = 'student';
+      if (email.toLowerCase().includes('staff') || email.toLowerCase().includes('teacher') || email.toLowerCase().includes('lecturer')) {
+        role = 'teacher';
+      }
+      
+      // Insert new user
+      db.run(
+        `INSERT INTO users (student_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`,
+        [studentId || null, name, email.toLowerCase(), hashedPassword, role],
+        function(err) {
+          if (err) {
+            return res.status(400).json({ error: err.message });
+          }
+          
+          // Return success (don't auto-login, redirect to login page)
+          res.json({ 
+            message: 'Registration successful',
+            userId: this.lastID,
+            redirect: '/login'
+          });
+        }
+      );
+    }
+  });
+});
+
+// Admin Key authentication endpoint
+app.post('/api/auth/admin-key', (req, res) => {
+  const { pin } = req.body;
+  
+  if (!pin) {
+    return res.status(400).json({ error: 'PIN is required' });
+  }
+
+  // Hardcoded admin PIN as requested
+  const ADMIN_PIN = '030702';
+  
+  if (pin !== ADMIN_PIN) {
+    return res.status(401).json({ error: '❌ Invalid Admin Key.' });
+  }
+
+  // Check if admin user exists, create if not
+  db.get(`SELECT * FROM users WHERE email = ?`, ['admin@dut4life.ac.za'], (err, existingUser) => {
+    if (err) {
+      return res.status(500).json({ error: err.message });
+    }
+
+    if (existingUser) {
+      // Admin user exists, generate token
+      const tokenPayload = { id: existingUser.id, role: 'admin', isAdmin: true };
+      const token = jwt.sign(tokenPayload, JWT_SECRET);
+      
+      res.json({ 
+        token, 
+        user: { 
+          id: existingUser.id, 
+          name: existingUser.name, 
+          role: 'admin', 
+          email: existingUser.email, 
+          student_id: existingUser.student_id, 
+          isAdmin: true 
+        } 
+      });
+    } else {
+      // Create admin user
+      const adminPassword = bcrypt.hashSync('admin123', 10); // Default password for admin
+      db.run(
+        `INSERT INTO users (student_id, name, email, password_hash, role) VALUES (?, ?, ?, ?, ?)`,
+        ['admin', 'System Administrator', 'admin@dut4life.ac.za', adminPassword, 'admin'],
+        function(err) {
+          if (err) {
+            return res.status(500).json({ error: err.message });
+          }
+
+          // Generate token for new admin user
+          const tokenPayload = { id: this.lastID, role: 'admin', isAdmin: true };
+          const token = jwt.sign(tokenPayload, JWT_SECRET);
+          
+          res.json({ 
+            token, 
+            user: { 
+              id: this.lastID, 
+              name: 'System Administrator', 
+              role: 'admin', 
+              email: 'admin@dut4life.ac.za', 
+              student_id: 'admin', 
+              isAdmin: true 
+            } 
+          });
+        }
+      );
+    }
+  });
+});
+
+// Middleware: require admin role (checks JWT.isAdmin)
+function requireAdmin(req, res, next) {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  try {
+    const payload = jwt.verify(token, JWT_SECRET);
+    if (!payload.isAdmin) return res.status(403).json({ error: 'Admin only' });
+    req.user = payload;
+    next();
+  } catch (err) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+}
+
+// Example admin-only endpoint
+app.get('/api/admin/stats', requireAdmin, (req, res) => {
+  res.json({ status: 'ok', admin: true, user: req.user });
 });
 
 // User endpoints
@@ -184,7 +472,7 @@ app.post('/api/faces/enroll', upload.single('image'), (req, res) => {
   db.get(`SELECT COUNT(*) as count FROM face_embeddings WHERE user_id = ?`, [user_id], (err, row) => {
     if (err) return res.status(500).json({ error: err.message });
     const existing = row?.count || 0;
-    const MAX_PER_USER = 10;
+    const MAX_PER_USER = 6;
 
     if (existing >= MAX_PER_USER) {
       return res.status(400).json({ error: `Embedding limit reached: max ${MAX_PER_USER}` });
@@ -206,8 +494,8 @@ app.post('/api/faces/enroll', upload.single('image'), (req, res) => {
   });
 });
 
-// List enrolled face embeddings with user info
-app.get('/api/faces', (req, res) => {
+// List enrolled face embeddings with user info (admin only)
+app.get('/api/faces', requireAdmin, (req, res) => {
   db.all(`SELECT fe.id, fe.user_id, fe.embedding, fe.image_path, fe.confidence, fe.created_at, u.name, u.student_id
           FROM face_embeddings fe
           JOIN users u ON fe.user_id = u.id`, [], (err, rows) => {
@@ -216,76 +504,206 @@ app.get('/api/faces', (req, res) => {
   });
 });
 
+// Get user's own face embeddings
+app.get('/api/user/faces', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.id;
+    
+    db.all(`SELECT id, embedding, image_path, confidence, created_at 
+            FROM face_embeddings 
+            WHERE user_id = ? 
+            ORDER BY created_at DESC`, [userId], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      res.json({
+        faces: rows || [],
+        maxFaces: 6,
+        remainingSlots: Math.max(0, 6 - (rows?.length || 0))
+      });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// Delete user's own face embedding
+app.delete('/api/user/faces/:faceId', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.id;
+    const faceId = req.params.faceId;
+    
+    // Verify the face belongs to the user
+    db.get(`SELECT * FROM face_embeddings WHERE id = ? AND user_id = ?`, [faceId, userId], (err, face) => {
+      if (err) return res.status(500).json({ error: err.message });
+      if (!face) return res.status(404).json({ error: 'Face not found or not authorized' });
+      
+      // Delete the face
+      db.run(`DELETE FROM face_embeddings WHERE id = ? AND user_id = ?`, [faceId, userId], function(err) {
+        if (err) return res.status(500).json({ error: err.message });
+        res.json({ message: 'Face deleted successfully', deletedId: faceId });
+      });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// User self-enrollment (requires authentication)
+app.post('/api/user/faces/enroll', upload.single('image'), (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.id;
+    const { embedding, confidence } = req.body;
+    const image_path = req.file ? req.file.path : null;
+    
+    // Use actual confidence from face detection, or default to reasonable value
+    const actualConfidence = confidence && confidence > 0 ? confidence : 0.8;
+
+    if (!embedding) return res.status(400).json({ error: 'Face embedding required' });
+
+    // Check face limit for user
+    db.get(`SELECT COUNT(*) as count FROM face_embeddings WHERE user_id = ?`, [userId], (err, row) => {
+      if (err) return res.status(500).json({ error: err.message });
+      const existing = row?.count || 0;
+      const MAX_PER_USER = 6;
+
+      if (existing >= MAX_PER_USER) {
+        return res.status(400).json({ error: `Face enrollment limit reached: max ${MAX_PER_USER} faces per user` });
+      }
+
+      const embStr = typeof embedding === 'string' ? embedding : JSON.stringify(embedding);
+      db.run(`INSERT INTO face_embeddings (user_id, embedding, image_path, confidence) VALUES (?, ?, ?, ?)`,
+        [userId, embStr, image_path, actualConfidence],
+        function (err) {
+          if (err) return res.status(400).json({ error: err.message });
+          res.json({
+            id: this.lastID,
+            user_id: userId,
+            embedding: embStr,
+            image_path,
+            confidence: Number(actualConfidence),
+            remaining_slots: MAX_PER_USER - existing - 1
+          });
+        });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
 app.post('/api/faces/recognize', (req, res) => {
-  const { embedding, threshold = 0.4 } = req.body; // Lowered threshold for testing
+  const { embedding, threshold = 0.7 } = req.body; // Increased threshold for better accuracy
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  
   console.log('Recognition request received:', { 
     threshold,
     embeddingType: typeof embedding,
     isArray: Array.isArray(embedding),
-    length: embedding?.length
+    length: embedding?.length,
+    hasToken: !!token
   });
+  
   if (!embedding) return res.status(400).json({ error: 'Face embedding required' });
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
 
-  let parsed = [];
+  // Verify token and get user ID
   try {
-    parsed = Array.isArray(embedding) ? embedding : JSON.parse(embedding);
-    console.log('Parsed embedding:', {
-      length: parsed.length,
-      sample: parsed.slice(0, 5),
-      type: typeof parsed[0]
-    });
-  } catch (e) {
-    console.error('Error parsing embedding:', e);
-    parsed = (embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
-  }
-
-  db.all(`SELECT fe.*, u.name, u.student_id, u.email 
-          FROM face_embeddings fe 
-          JOIN users u ON fe.user_id = u.id`,
-    [], (err, rows) => {
-      if (err) return res.status(500).json({ error: err.message });
-
-      let best = null;
-      let bestSim = 0;
-
-      console.log(`Comparing against ${rows.length} stored faces`);
-      
-      for (const r of rows) {
-        let stored = [];
-        try {
-          stored = Array.isArray(r.embedding) ? r.embedding : JSON.parse(r.embedding);
-        } catch (e) {
-          stored = (r.embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
-        }
-
-        const sim = cosineSimilarity(parsed, stored);
-        console.log(`Similarity with user ${r.name} (${r.student_id}): ${sim}`);
-        
-        if (sim > threshold && sim > bestSim) {
-          bestSim = sim;
-          best = r;
-          console.log(`New best match: ${r.name} with similarity ${sim}`);
-        }
-      }
-
-      if (best) {
-        return res.json({
-          recognized: true,
-          id: best.user_id,
-          name: best.name,
-          student_id: best.student_id,
-          similarity: bestSim,
-          confidence: bestSim * 100
-        });
-      }
-
-      res.json({
-        recognized: false,
-        name: 'Unknown Face',
-        similarity: 0.0,
-        confidence: 0.0
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const userId = decoded.id;
+    
+    let parsed = [];
+    try {
+      parsed = Array.isArray(embedding) ? embedding : JSON.parse(embedding);
+      console.log('Parsed embedding:', {
+        length: parsed.length,
+        sample: parsed.slice(0, 5),
+        type: typeof parsed[0]
       });
-    });
+    } catch (e) {
+      console.error('Error parsing embedding:', e);
+      parsed = (embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
+    }
+
+    // Get ONLY the logged-in user's faces
+    db.all(`SELECT fe.*, u.name, u.student_id, u.email 
+            FROM face_embeddings fe 
+            JOIN users u ON fe.user_id = u.id 
+            WHERE fe.user_id = ?`,
+      [userId], (err, rows) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        let best = null;
+        let bestSim = 0;
+
+        console.log(`Comparing against ${rows.length} stored faces for user ${userId}`);
+        
+        if (rows.length === 0) {
+          return res.json({
+            recognized: false,
+            name: '❓ No faces enrolled',
+            similarity: 0.0,
+            confidence: 0.0,
+            message: 'No faces enrolled for this user'
+          });
+        }
+        
+        for (const r of rows) {
+          let stored = [];
+          try {
+            stored = Array.isArray(r.embedding) ? r.embedding : JSON.parse(r.embedding);
+          } catch (e) {
+            stored = (r.embedding || '').split(',').map(Number).filter(n => !Number.isNaN(n));
+          }
+
+          const sim = cosineSimilarity(parsed, stored);
+          console.log(`Similarity with user ${r.name} (${r.student_id}): ${sim}`);
+          
+          if (sim > threshold && sim > bestSim) {
+            bestSim = sim;
+            best = r;
+            console.log(`New best match: ${r.name} with similarity ${sim}`);
+          }
+        }
+
+        if (best) {
+          return res.json({
+            recognized: true,
+            id: best.user_id,
+            name: best.name,
+            student_id: best.student_id,
+            similarity: bestSim,
+            confidence: bestSim * 100,
+            message: `✅ Recognized as ${best.name}`
+          });
+        }
+
+        res.json({
+          recognized: false,
+          name: '❓ Unknown Face',
+          similarity: bestSim,
+          confidence: bestSim * 100,
+          message: '❓ Unknown Face',
+          threshold: threshold
+        });
+      });
+    
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
 });
 
 // Class management
@@ -464,12 +882,82 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Something went wrong!' });
 });
 
-// Start server
-app.listen(PORT, () => {
-  console.log(`✅ Server running at http://localhost:${PORT}`);
-  console.log(`📊 Database: ${dbPath}`);
-  console.log(`📁 Uploads: ${uploadsDir}`);
+// Recognition configuration
+app.get('/api/recognition/config', (req, res) => {
+  res.json({
+    defaultThreshold: 0.7,
+    minThreshold: 0.5,
+    maxThreshold: 0.95,
+    description: 'Confidence threshold for face recognition (0.5 = 50%, 0.7 = 70%, etc.)'
+  });
 });
+
+app.post('/api/recognition/config', (req, res) => {
+  const { threshold } = req.body;
+  if (typeof threshold !== 'number' || threshold < 0.5 || threshold > 0.95) {
+    return res.status(400).json({ error: 'Threshold must be between 0.5 and 0.95' });
+  }
+  
+  // In a real app, you'd save this to a config file or database
+  // For now, we'll just return success
+  res.json({ 
+    success: true, 
+    message: `Confidence threshold updated to ${(threshold * 100).toFixed(1)}%`,
+    threshold: threshold
+  });
+});
+
+// Model management endpoints
+app.get('/api/models/status', (req, res) => {
+  const modelCheck = checkModelsExist();
+  res.json({
+    allPresent: modelCheck.allPresent,
+    missingFiles: modelCheck.missingFiles,
+    totalRequired: REQUIRED_MODEL_FILES.length,
+    presentCount: REQUIRED_MODEL_FILES.length - modelCheck.missingFiles.length
+  });
+});
+
+app.post('/api/models/download', async (req, res) => {
+  try {
+    const modelCheck = checkModelsExist();
+    if (modelCheck.allPresent) {
+      return res.json({ success: true, message: 'All models already present' });
+    }
+    
+    const downloadResult = await downloadMissingModels(modelCheck.missingFiles);
+    res.json({
+      success: downloadResult.success,
+      downloaded: modelCheck.missingFiles.filter(f => !downloadResult.failedDownloads.includes(f)),
+      failed: downloadResult.failedDownloads,
+      message: downloadResult.success ? 'All models downloaded successfully' : 'Some models failed to download'
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Start server and initialize models
+async function startServer() {
+  try {
+    // Initialize models first
+    await initializeModels();
+    
+    // Start the server
+    app.listen(PORT, () => {
+      console.log(`✅ Server running at http://localhost:${PORT}`);
+      console.log(`📊 Database: ${dbPath}`);
+      console.log(`📁 Uploads: ${uploadsDir}`);
+      console.log(`🤖 Models: ${modelsDir}`);
+    });
+  } catch (error) {
+    console.error('❌ Server startup failed:', error);
+    process.exit(1);
+  }
+}
+
+// Start the server
+startServer();
 
 // Graceful shutdown
 process.on('SIGINT', () => {

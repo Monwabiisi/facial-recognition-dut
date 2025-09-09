@@ -1,0 +1,53 @@
+﻿**********************
+Windows PowerShell transcript start
+Start time: 20250909155147
+Username: DESKTOP-6G0CTUR\ntand
+RunAs User: DESKTOP-6G0CTUR\ntand
+Configuration Name: 
+Machine: DESKTOP-6G0CTUR (Microsoft Windows NT 10.0.26100.0)
+Host Application: C:\WINDOWS\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -ExecutionPolicy Bypass -Command Start-Transcript -Path scripts\auto_setup_and_run.log -Force; .\scripts\auto_setup_and_run.ps1; Stop-Transcript
+Process ID: 28524
+PSVersion: 5.1.26100.4768
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.4768
+BuildVersion: 10.0.26100.4768
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+Transcript started, output file is scripts\auto_setup_and_run.log
+Repo root: C:\Users\ntand\facial-recognition-dut
+Downloading Python embed from https://www.python.org/ftp/python/3.12.7/python-3.12.7-embed-amd64.zip
+Extracting Python to C:\Users\ntand\AppData\Local\Programs\DevTools\Python312
+Downloading Node from https://nodejs.org/dist/v20.17.0/node-v20.17.0-win-x64.zip
+Extracting Node to C:\Users\ntand\AppData\Local\Programs\DevTools\Node
+Python dir: C:\Users\ntand\AppData\Local\Programs\DevTools\Python312
+Node bin: C:\Users\ntand\AppData\Local\Programs\DevTools\Node\node-v20.17.0-win-x64
+Verifying python and node
+
+
+Working dir: C:\Users\ntand\facial-recognition-dut
+Running: C:\Users\ntand\AppData\Local\Programs\DevTools\Node\node-v20.17.0-win-x64\npm.cmd rebuild sqlite3 --update-binary
+Wrote rebuild log: C:\Users\ntand\facial-recognition-dut\rebuild_log.txt
+Testing require('sqlite3') via node
+Wrote require test: C:\Users\ntand\facial-recognition-dut\require_sqlite3.txt
+Starting server.js and capturing stdout/stderr to C:\Users\ntand\facial-recognition-dut\server_log.txt for 6s
+PS>TerminatingError(Start-Process): "The running command stopped because the preference variable "ErrorActionPreference" or common parameter is set to Stop: This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same. Give different inputs and Run your command again."
+>> TerminatingError(Start-Process): "The running command stopped because the preference variable "ErrorActionPreference" or common parameter is set to Stop: This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same. Give different inputs and Run your command again."
+>> TerminatingError(Start-Process): "The running command stopped because the preference variable "ErrorActionPreference" or common parameter is set to Stop: This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same. Give different inputs and Run your command again."
+The running command stopped because the preference variable "ErrorActionPreference" or common parameter is set to Stop: This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same. Give different inputs and Run your command again.
+Start-Process : This command cannot be run because "RedirectStandardOutput" and "RedirectStandardError" are same.
+Give different inputs and Run your command again.
+At C:\Users\ntand\facial-recognition-dut\scripts\auto_setup_and_run.ps1:89 char:9
++ $proc = Start-Process -FilePath $nodeExe -ArgumentList 'server.js' -R ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [Start-Process], InvalidOperationException
+    + FullyQualifiedErrorId : InvalidOperationException,Microsoft.PowerShell.Commands.StartProcessCommand
+
+PS>$global:?
+False
+**********************
+Windows PowerShell transcript end
+End time: 20250909155221
+**********************

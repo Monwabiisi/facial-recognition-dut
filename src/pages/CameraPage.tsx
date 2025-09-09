@@ -26,7 +26,9 @@ interface EnrollmentData {
 export default function CameraPage() {
   const { user, isTeacher, isStudent } = useAuth();
   const { isEnrolled, loading: enrollmentLoading } = useEnrollmentStatus();
-  const [mode, setMode] = useState<'recognize' | 'enroll'>(isTeacher ? 'recognize' : 'enroll');
+  const [mode, setMode] = useState<'recognize' | 'enroll'>(
+    isStudent ? 'enroll' : isTeacher ? 'recognize' : 'enroll'
+  );
   const [isActive, setIsActive] = useState(false);
   const [isScanning, setIsScanning] = useState(false);
   const [faceCount, setFaceCount] = useState(0);
@@ -35,14 +37,18 @@ export default function CameraPage() {
   const canMarkAttendance = isTeacher;
   const [recognitionResults, setRecognitionResults] = useState<RecognitionResult[]>([]);
   const [currentRecognition, setCurrentRecognition] = useState<RecognitionResult | null>(null);
+  const [unknownFaceMessage, setUnknownFaceMessage] = useState<string>('');
   const [enrollmentData, setEnrollmentData] = useState<EnrollmentData>({
-    name: '',
-    studentId: '',
-    email: '',
-  capturedPhotos: [],
-  capturedEmbeddings: []
+    name: user?.name || '',
+    studentId: user?.student_id || '',
+    email: user?.email || '',
+    capturedPhotos: [],
+    capturedEmbeddings: []
   });
-  const [enrollmentStep, setEnrollmentStep] = useState<'form' | 'capture'>('form');
+  // Students skip the form step since their info is already available
+  const [enrollmentStep, setEnrollmentStep] = useState<'form' | 'capture'>(
+    isStudent ? 'capture' : 'form'
+  );
   const [sessionStats, setSessionStats] = useState({
     recognized: 0,
     unknown: 0,
@@ -54,8 +60,54 @@ export default function CameraPage() {
   const lastRecognizedNameRef = useRef<string | null>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const lastDetectionRef = useRef<any>(null);
+  
+  // Track recognized students for the current session/day
+  const recognizedStudentsToday = useRef<Set<string>>(new Set());
+  
+  // Track distinct unknown faces using embeddings
+  const unknownFaceEmbeddings = useRef<Array<{id: string, embedding: Float32Array, timestamp: number}>>([]); 
+  const UNKNOWN_SIMILARITY_THRESHOLD = 0.6; // If similarity > 0.6, consider it the same unknown face
 
   const audioRef = useRef<HTMLAudioElement>(null);
+
+  // Helper function to calculate cosine similarity between two embeddings
+  const calculateCosineSimilarity = useCallback((a: Float32Array, b: Float32Array): number => {
+    if (a.length !== b.length) return 0;
+    
+    let dotProduct = 0;
+    let normA = 0;
+    let normB = 0;
+    
+    for (let i = 0; i < a.length; i++) {
+      dotProduct += a[i] * b[i];
+      normA += a[i] * a[i];
+      normB += b[i] * b[i];
+    }
+    
+    const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
+    return magnitude === 0 ? 0 : dotProduct / magnitude;
+  }, []);
+
+  // Check if an unknown face is already tracked
+  const isUnknownFaceAlreadyTracked = useCallback((embedding: Float32Array): boolean => {
+    return unknownFaceEmbeddings.current.some(unknownFace => {
+      const similarity = calculateCosineSimilarity(embedding, unknownFace.embedding);
+      return similarity > UNKNOWN_SIMILARITY_THRESHOLD;
+    });
+  }, [calculateCosineSimilarity, UNKNOWN_SIMILARITY_THRESHOLD]);
+
+  // Reset session counters (useful for new day or manual reset)
+  const resetSessionCounters = useCallback(() => {
+    recognizedStudentsToday.current.clear();
+    unknownFaceEmbeddings.current = [];
+    setSessionStats({
+      recognized: 0,
+      unknown: 0,
+      avgConfidence: 0
+    });
+    setRecognitionResults([]);
+    console.log('Session counters reset');
+  }, []);
 
   // Play sound effects
   const playSound = useCallback((type: 'success' | 'error' | 'scan') => {
@@ -127,8 +179,12 @@ export default function CameraPage() {
             const form = new FormData();
             form.append('image', blob, `capture_${Date.now()}.jpg`);
 
+            const token = localStorage.getItem('token');
             const resp = await fetch('/api/faces/recognize', {
               method: 'POST',
+              headers: {
+                'Authorization': `Bearer ${token}`,
+              },
               body: form
             });
 
@@ -152,24 +208,29 @@ export default function CameraPage() {
             const now = Date.now();
             // Only count a recognition if:
             // 1. It's a valid recognition (has name, decent confidence)
-            // 2. Either it's a different person or enough time has passed
+            // 2. This student hasn't been counted today/session yet
+            const studentKey = result.studentId || result.name; // Use studentId if available, fallback to name
             const shouldCountRecognition = 
               result.name && // Must have a name
               result.confidence > 60 && // Must have decent confidence
-              ((lastRecognizedNameRef.current !== result.name) || // Either different person
-               (now - lastRecognizedAtRef.current > 2000)); // Or same person after cooldown
+              studentKey && // Must have a unique identifier
+              !recognizedStudentsToday.current.has(studentKey); // Haven't counted this student today
 
             console.debug('Recognition result:', { 
               name: result.name,
+              studentId: result.studentId,
               confidence: result.confidence,
               shouldCount: shouldCountRecognition,
-              lastRecognized: lastRecognizedNameRef.current,
-              timeSinceLastCount: now - lastRecognizedAtRef.current,
+              studentKey: studentKey,
+              alreadyRecognized: recognizedStudentsToday.current.has(studentKey),
               currentRecognized: sessionStats.recognized
             });
 
             setCurrentRecognition(result);
+            setUnknownFaceMessage(''); // Clear any unknown face message
             if (shouldCountRecognition) {
+              // Add this student to the recognized set
+              recognizedStudentsToday.current.add(studentKey);
               lastRecognizedAtRef.current = now;
               lastRecognizedNameRef.current = result.name;
               setRecognitionResults(prev => [result, ...prev.slice(0, 9)]);
@@ -184,25 +245,66 @@ export default function CameraPage() {
               });
               playSound('success');
             } else {
-              // Still update the UI but don't increment counter due to cooldown
-              console.debug('Recognition ignored for counting due to cooldown');
+              // Still update the UI but don't increment counter since student already counted today
+              console.debug('Recognition ignored for counting - student already counted today');
             }
           } else {
-            // Unrecognized face -> clear current recognition so overlay shows Unknown
+            // Unrecognized face -> clear current recognition and show unknown message
             setCurrentRecognition(null);
-            // Debounce unknown counting so it doesn't increment every frame
-            const now = Date.now();
-            const UNKNOWN_COOLDOWN_MS = 3000;
-            if (now - lastUnknownAtRef.current > UNKNOWN_COOLDOWN_MS) {
-              lastUnknownAtRef.current = now;
-              setSessionStats(prev => ({
-                ...prev,
-                unknown: prev.unknown + 1
-              }));
-              playSound('error');
+            setUnknownFaceMessage(data?.message || '❓ Unknown Face');
+            
+            // Clear the message after 3 seconds
+            setTimeout(() => setUnknownFaceMessage(''), 3000);
+            
+            // Check if this unknown face is distinct from previously seen unknown faces
+            const detection = faces[0];
+            if (detection && detection.embedding) {
+              const embedding = detection.embedding instanceof Float32Array ? 
+                detection.embedding : new Float32Array(detection.embedding);
+              
+              // Only count if this is a new distinct unknown face
+              if (!isUnknownFaceAlreadyTracked(embedding)) {
+                const now = Date.now();
+                const unknownFaceId = `unknown_${now}_${Math.random().toString(36).substr(2, 9)}`;
+                
+                // Add this unknown face to our tracking
+                unknownFaceEmbeddings.current.push({
+                  id: unknownFaceId,
+                  embedding: embedding,
+                  timestamp: now
+                });
+                
+                // Clean up old unknown faces (older than 10 minutes) to prevent memory issues
+                const TEN_MINUTES = 10 * 60 * 1000;
+                unknownFaceEmbeddings.current = unknownFaceEmbeddings.current.filter(
+                  face => now - face.timestamp < TEN_MINUTES
+                );
+                
+                setSessionStats(prev => ({
+                  ...prev,
+                  unknown: prev.unknown + 1
+                }));
+                playSound('error');
+                
+                console.debug('New distinct unknown face detected and counted:', {
+                  id: unknownFaceId,
+                  totalUnknown: unknownFaceEmbeddings.current.length
+                });
+              } else {
+                console.debug('Unknown face detected but not counted - already seen this face');
+              }
             } else {
-              // For debugging, show when an uncounted unknown occurs
-              console.debug('Unknown face detected but not counted (cooldown)');
+              // Fallback: if no embedding available, use time-based cooldown as before
+              const now = Date.now();
+              const UNKNOWN_COOLDOWN_MS = 3000;
+              if (now - lastUnknownAtRef.current > UNKNOWN_COOLDOWN_MS) {
+                lastUnknownAtRef.current = now;
+                setSessionStats(prev => ({
+                  ...prev,
+                  unknown: prev.unknown + 1
+                }));
+                playSound('error');
+              }
             }
           }
         } catch (error) {
@@ -305,14 +407,23 @@ export default function CameraPage() {
       // TODO: Send enrollment data to backend
       
       // Reset the form and show success message
-      setEnrollmentStep('form');
-      setEnrollmentData({
-        name: '',
-        studentId: '',
-        email: '',
-  capturedPhotos: [],
-  capturedEmbeddings: []
-      });
+      // Students stay in capture mode, admins go back to form
+      if (isStudent) {
+        setEnrollmentData(prev => ({
+          ...prev,
+          capturedPhotos: [],
+          capturedEmbeddings: []
+        }));
+      } else {
+        setEnrollmentStep('form');
+        setEnrollmentData({
+          name: '',
+          studentId: '',
+          email: '',
+          capturedPhotos: [],
+          capturedEmbeddings: []
+        });
+      }
       alert(`✅ Successfully enrolled ${enrollmentData.name} with ${enrollmentData.capturedPhotos.length} photos!`);
     } catch (error) {
       alert("Failed to complete enrollment. Please try again.");
@@ -327,7 +438,9 @@ export default function CameraPage() {
     }
 
     try {
-      const userId = Number(enrollmentData.studentId);
+      // For students, use their actual user ID from auth context
+      // For admin enrolling others, use the studentId from the form
+      const userId = isStudent ? user?.id : Number(enrollmentData.studentId);
       // We'll send each embedding + the first photo as a representative image
       for (let i = 0; i < enrollmentData.capturedEmbeddings.length; i++) {
         const emb = enrollmentData.capturedEmbeddings[i];
@@ -347,9 +460,17 @@ export default function CameraPage() {
       }
 
       alert('Enrollment saved to server successfully');
-      // reset
-      setEnrollmentStep('form');
-      setEnrollmentData({ name: '', studentId: '', email: '', capturedPhotos: [], capturedEmbeddings: [] });
+      // Reset - students stay in capture mode, admins go back to form
+      if (isStudent) {
+        setEnrollmentData(prev => ({ 
+          ...prev, 
+          capturedPhotos: [], 
+          capturedEmbeddings: [] 
+        }));
+      } else {
+        setEnrollmentStep('form');
+        setEnrollmentData({ name: '', studentId: '', email: '', capturedPhotos: [], capturedEmbeddings: [] });
+      }
     } catch (e) {
       console.error('Save enrollment failed', e);
       alert('Failed to save enrollment to server');
@@ -424,10 +545,15 @@ export default function CameraPage() {
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold font-heading gradient-text mb-2">
-              📹 FACIAL RECOGNITION CAMERA
+              {isStudent ? "👤 FACE ENROLLMENT" : "📹 FACIAL RECOGNITION CAMERA"}
             </h1>
             <p className="text-gray-300 font-body">
-              {isTeacher ? "Advanced AI-powered attendance tracking system" : "Face Enrollment System"}
+              {isStudent 
+                ? "Capture your face for automatic attendance recognition"
+                : isTeacher 
+                ? "Advanced AI-powered attendance tracking system" 
+                : "Face Enrollment System"
+              }
             </p>
           </div>
           
@@ -461,28 +587,30 @@ export default function CameraPage() {
         </div>
       </div>
 
-      {/* Session Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <StatsCard
-          icon="✅"
-          value={sessionStats.recognized}
-          label="Recognized Today"
-          color="green"
-        />
-        
-        <StatsCard
-          icon="❓"
-          value={sessionStats.unknown}
-          label="Unknown Faces"
-          color="gold"
-        />
-        
-        <StatsCard
-          icon="🎯"
-          value={`${sessionStats.avgConfidence.toFixed(1)}%`}
-          color="blue"
-        />
-      </div>
+      {/* Session Stats - Only show for teachers/admins */}
+      {!isStudent && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <StatsCard
+            icon="✅"
+            value={sessionStats.recognized}
+            label="Recognized Today"
+            color="green"
+          />
+          
+          <StatsCard
+            icon="❓"
+            value={sessionStats.unknown}
+            label="Unknown Faces"
+            color="gold"
+          />
+          
+          <StatsCard
+            icon="🎯"
+            value={`${sessionStats.avgConfidence.toFixed(1)}%`}
+            color="blue"
+          />
+        </div>
+      )}
 
       {/* Main Camera Interface */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
@@ -627,7 +755,12 @@ export default function CameraPage() {
                   }
                   glowColor={isActive ? '#ff0000' : '#00F5FF'}
                 >
-                  {isActive ? 'STOP CAMERA' : 'START CAMERA'}
+                  {isActive 
+                    ? 'STOP CAMERA' 
+                    : isStudent 
+                      ? 'CAPTURE FACE' 
+                      : 'START CAMERA'
+                  }
                 </CyberButton>
               ) : (
                 <div className="text-gray-400 text-sm font-mono">
@@ -640,11 +773,50 @@ export default function CameraPage() {
 
         {/* Control Panel */}
         <div className="space-y-6">
-          {/* Enrollment Form */}
-          {mode === 'enroll' && enrollmentStep === 'form' && (
+          {/* Student Face Capture Info */}
+          {isStudent && mode === 'enroll' && (
             <div className="glass-card p-6">
               <h3 className="text-xl font-bold font-heading text-purple-400 mb-4">
-                👤 NEW ENROLLMENT
+                📸 YOUR FACE CAPTURE
+              </h3>
+              <div className="space-y-4">
+                {/* Show current user info (read-only) */}
+                <div className="bg-white/5 rounded-xl p-4 space-y-2">
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400">Name:</span>
+                    <span className="text-white font-mono">{user?.name}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400">Student ID:</span>
+                    <span className="text-white font-mono">{user?.student_id}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-sm">
+                    <span className="text-gray-400">Email:</span>
+                    <span className="text-white font-mono">{user?.email}</span>
+                  </div>
+                </div>
+                
+                <div className="bg-blue-500/10 border border-blue-500/30 rounded-xl p-4">
+                  <div className="flex items-start gap-3">
+                    <div className="text-2xl">💡</div>
+                    <div>
+                      <p className="text-blue-400 font-semibold mb-1">How it works:</p>
+                      <p className="text-gray-300 text-sm">
+                        Capture up to 6 photos of your face from different angles. 
+                        This helps the system recognize you accurately during attendance.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Admin/Teacher Enrollment Form - Only for new student enrollment */}
+          {(isTeacher || user?.role === 'admin') && mode === 'enroll' && enrollmentStep === 'form' && (
+            <div className="glass-card p-6">
+              <h3 className="text-xl font-bold font-heading text-purple-400 mb-4">
+                👤 NEW STUDENT ENROLLMENT
               </h3>
               <div className="space-y-4">
                 <CyberInput
@@ -719,6 +891,20 @@ export default function CameraPage() {
                       <p className="text-gray-400 text-xs">
                         {currentRecognition.confidence.toFixed(1)}% confidence
                       </p>
+                    </div>
+                  </div>
+                </div>
+              ) : unknownFaceMessage ? (
+                <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-gradient-to-r from-yellow-400 to-orange-500 rounded-full flex items-center justify-center">
+                      <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L3.732 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <p className="text-white font-bold">{unknownFaceMessage}</p>
+                      <p className="text-yellow-400 text-sm">Face not recognized in your account</p>
                     </div>
                   </div>
                 </div>

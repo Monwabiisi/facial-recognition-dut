@@ -13,12 +13,14 @@ interface AuthContextType {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  loginWithAdminKey: (pin: string) => Promise<void>;
   register: (name: string, email: string, password: string, studentId?: string) => Promise<void>;
   logout: () => void;
   isAuthenticated: boolean;
   isTeacher: boolean;
   isStudent: boolean;
   isAdmin: boolean;
+  checkUserFaceEnrollments: () => Promise<{ hasEnrollments: boolean; count: number }>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -87,6 +89,39 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     }
   };
 
+  const loginWithAdminKey = async (pin: string): Promise<void> => {
+    setLoading(true);
+    try {
+      const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
+      const response = await fetch(`${API_BASE}/auth/admin-key`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ pin }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Invalid Admin Key');
+      }
+
+      const data = await response.json();
+      
+      if (data.user && data.token) {
+        setUser(data.user as User);
+        localStorage.setItem('dut_user', JSON.stringify(data.user));
+        localStorage.setItem('token', data.token);
+      } else {
+        throw new Error('Invalid admin key response');
+      }
+    } catch (error: any) {
+      throw new Error(error?.message || 'Admin key authentication failed');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const register = async (name: string, email: string, password: string, studentId?: string): Promise<void> => {
     setLoading(true);
     try {
@@ -108,16 +143,48 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     localStorage.removeItem('dut_user');
   };
 
+  const checkUserFaceEnrollments = async (): Promise<{ hasEnrollments: boolean; count: number }> => {
+    try {
+      const token = localStorage.getItem('token');
+      if (!token) {
+        throw new Error('No authentication token');
+      }
+
+      const API_BASE = (import.meta.env.VITE_API_URL as string || 'http://localhost:5000') + '/api';
+      const response = await fetch(`${API_BASE}/user/faces`, {
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        return {
+          hasEnrollments: data.faces.length > 0,
+          count: data.faces.length
+        };
+      } else {
+        throw new Error('Failed to check face enrollments');
+      }
+    } catch (error) {
+      console.error('Error checking face enrollments:', error);
+      return { hasEnrollments: false, count: 0 };
+    }
+  };
+
   const contextValue: AuthContextType = {
     user,
     loading,
     login,
+    loginWithAdminKey,
     register,
     logout,
     isAuthenticated: !!user,
     isTeacher: user?.role === 'teacher' || user?.role === 'admin',
     isStudent: user?.role === 'student',
     isAdmin: user?.role === 'admin',
+    checkUserFaceEnrollments,
   };
 
   return (

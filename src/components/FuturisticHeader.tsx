@@ -90,6 +90,15 @@ export default function FuturisticHeader() {
                     📊 <span>Analytics</span>
                   </span>
                 </Link>
+                
+                <Link
+                  to="/profile"
+                  className={`nav-item ${isActiveRoute('/profile') ? 'active' : ''}`}
+                >
+                  <span className="flex items-center gap-2">
+                    👤 <span>Profile</span>
+                  </span>
+                </Link>
               </>
             )}
           </div>
@@ -197,6 +206,13 @@ export default function FuturisticHeader() {
                     className="block nav-item"
                   >
                     📊 Analytics
+                  </Link>
+                  <Link
+                    to="/profile"
+                    onClick={() => setIsMenuOpen(false)}
+                    className="block nav-item"
+                  >
+                    👤 Profile
                   </Link>
                 </>
               )}
