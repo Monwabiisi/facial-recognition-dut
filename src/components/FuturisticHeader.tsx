@@ -99,6 +99,17 @@ export default function FuturisticHeader() {
                     👤 <span>Profile</span>
                   </span>
                 </Link>
+                
+                {(user?.role === 'admin' || user?.role === 'teacher') && (
+                  <Link
+                    to="/admin"
+                    className={`nav-item ${isActiveRoute('/admin') ? 'active' : ''}`}
+                  >
+                    <span className="flex items-center gap-2">
+                      👑 <span>Admin</span>
+                    </span>
+                  </Link>
+                )}
               </>
             )}
           </div>
@@ -214,6 +225,16 @@ export default function FuturisticHeader() {
                   >
                     👤 Profile
                   </Link>
+                  
+                  {(user?.role === 'admin' || user?.role === 'teacher') && (
+                    <Link
+                      to="/admin"
+                      onClick={() => setIsMenuOpen(false)}
+                      className="block nav-item"
+                    >
+                      👑 Admin
+                    </Link>
+                  )}
                 </>
               )}
             </div>

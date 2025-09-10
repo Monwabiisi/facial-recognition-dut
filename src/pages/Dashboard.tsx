@@ -154,7 +154,7 @@ export default function Dashboard() {
 
         <StatsCard
           icon={isAdmin ? "👑" : "👤"}
-          value={isAdmin ? 'ADMIN' : 'USER'}
+          value={isAdmin ? 'ADMIN' : 'STUDENT'}
           label="Access Level"
           color={isAdmin ? 'orange' : 'pink'}
           animated

@@ -34,6 +34,8 @@ export default function ProfilePage() {
   const [isCapturing, setIsCapturing] = useState(false);
   const [modelsLoaded, setModelsLoaded] = useState(false);
   const streamRef = useRef<MediaStream | null>(null);
+  const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
+  const [isScanning, setIsScanning] = useState(false);
 
   useEffect(() => {
     if (!user) {
@@ -146,11 +148,43 @@ export default function ProfilePage() {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         setCameraActive(true);
+        setIsScanning(true);
+        startRealTimeDetection();
       }
     } catch (error) {
       console.error('Camera error:', error);
       setError('Failed to access camera. Please ensure camera permissions are granted.');
     }
+  };
+
+  const startRealTimeDetection = () => {
+    const detectLoop = async () => {
+      if (!videoRef.current || !cameraActive || !isScanning) return;
+      
+      try {
+        const detection = await faceapi
+          .detectSingleFace(videoRef.current, new faceapi.TinyFaceDetectorOptions())
+          .withFaceLandmarks()
+          .withFaceDescriptor();
+        
+        if (detection) {
+          const confidence = detection.detection.score;
+          setCurrentConfidence(confidence);
+        } else {
+          setCurrentConfidence(null);
+        }
+      } catch (error) {
+        console.error('Real-time detection error:', error);
+        setCurrentConfidence(null);
+      }
+      
+      // Continue the loop
+      if (cameraActive && isScanning) {
+        requestAnimationFrame(detectLoop);
+      }
+    };
+    
+    detectLoop();
   };
 
   const stopCamera = () => {
@@ -159,6 +193,8 @@ export default function ProfilePage() {
       streamRef.current = null;
     }
     setCameraActive(false);
+    setIsScanning(false);
+    setCurrentConfidence(null);
   };
 
   const captureAndEnrollFace = async () => {
@@ -200,6 +236,8 @@ export default function ProfilePage() {
       // Prepare embedding for backend
       const embedding = Array.from(detection.descriptor);
       const confidence = detection.detection.score;
+      
+      console.log('Face detection confidence:', confidence);
 
       // Send to backend
       const token = localStorage.getItem('token');
@@ -319,12 +357,18 @@ export default function ProfilePage() {
             <div className="flex items-center justify-between mb-6">
               <div>
                 <h3 className="text-xl font-bold text-white mb-2">Face Enrollments</h3>
-                <p className="text-gray-400">
+                <p className="text-gray-400 mb-2">
                   {userFaces.faces.length} of {userFaces.maxFaces} faces enrolled
-                  {userFaces.remainingSlots > 0 && (
-                    <span className="text-green-400 ml-2">({userFaces.remainingSlots} slots available)</span>
-                  )}
                 </p>
+                <div className="mb-4 p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+                  <p className="text-blue-300 text-xs">
+                    💡 <strong>Confidence Guide:</strong> Higher confidence = better recognition. 
+                    🔴 Poor = &lt;60%, 🟠 Fair = 60-69%, 🟡 Good = 70-89%, 🟢 Excellent = ≥90%
+                  </p>
+                </div>
+                {userFaces.remainingSlots > 0 && (
+                  <span className="text-green-400 ml-2">({userFaces.remainingSlots} slots available)</span>
+                )}
               </div>
               
               {userFaces.remainingSlots > 0 && !cameraActive && (
@@ -412,17 +456,72 @@ export default function ProfilePage() {
                     className="absolute top-0 left-0 w-full h-full pointer-events-none"
                     style={{ display: 'none' }}
                   />
+                  
+                  {/* Real-time Confidence Display */}
+                  <div className="absolute top-4 right-4 bg-black/80 backdrop-blur-sm rounded-lg p-3 border border-cyan-400/30">
+                    <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${
+                      currentConfidence === null ? 'bg-gray-500' :
+                      currentConfidence >= 0.9 ? 'bg-green-400 animate-pulse' :
+                      currentConfidence >= 0.7 ? 'bg-yellow-400' :
+                      currentConfidence >= 0.6 ? 'bg-orange-400' :
+                      'bg-red-400'
+                    }`}></div>
+                    <div>
+                      <p className="text-xs text-gray-300">Confidence</p>
+                      <p className={`text-lg font-mono font-bold ${
+                        currentConfidence === null ? 'text-gray-400' :
+                        currentConfidence >= 0.9 ? 'text-green-400' :
+                        currentConfidence >= 0.7 ? 'text-yellow-400' :
+                        currentConfidence >= 0.6 ? 'text-orange-400' :
+                        'text-red-400'
+                      }`}>
+                        {currentConfidence === null ? '--%' : `${(currentConfidence * 100).toFixed(1)}%`}
+                      </p>
+                    </div>
+                  </div>
+                  {currentConfidence !== null && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {currentConfidence >= 0.9 ? '🟢 Excellent' :
+                       currentConfidence >= 0.7 ? '🟡 Good' :
+                       currentConfidence >= 0.6 ? '🟠 Fair' :
+                       '🔴 Poor'}
+                    </p>
+                  )}
+                  </div>
                 </div>
                 
-                <div className="flex gap-4 justify-center">
-                  <CyberButton
-                    onClick={captureAndEnrollFace}
-                    loading={isCapturing}
-                    disabled={!modelsLoaded}
-                    glowColor="#00ff00"
-                  >
-                    {isCapturing ? 'CAPTURING...' : '📷 CAPTURE FACE'}
-                  </CyberButton>
+                <div className="flex flex-col gap-4 items-center">
+                  <div className="flex gap-4 justify-center">
+                    <CyberButton
+                      onClick={captureAndEnrollFace}
+                      loading={isCapturing}
+                      disabled={!modelsLoaded || currentConfidence === null}
+                      glowColor={currentConfidence && currentConfidence >= 0.7 ? "#00ff00" : "#ff6b6b"}
+                    >
+                      {isCapturing ? 'CAPTURING...' : '📷 CAPTURE FACE'}
+                    </CyberButton>
+                  </div>
+                  
+                  {/* Capture Quality Indicator */}
+                  {currentConfidence !== null && (
+                    <div className="text-center">
+                      <p className="text-sm text-gray-400 mb-1">Ready to capture</p>
+                      <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono ${
+                        currentConfidence >= 0.9 ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                        currentConfidence >= 0.7 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                        currentConfidence >= 0.6 ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                        'bg-red-500/20 text-red-400 border border-red-500/30'
+                      }`}>
+                        <span>Quality: {(currentConfidence * 100).toFixed(1)}%</span>
+                        {currentConfidence < 0.6 && <span>⚠️ Consider repositioning</span>}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {currentConfidence === null && (
+                    <p className="text-sm text-gray-500">Position your face in the camera view</p>
+                  )}
                   
                   <CyberButton
                     variant="secondary"
@@ -452,9 +551,13 @@ export default function ProfilePage() {
                       </div>
                       <div>
                         <p className="text-white font-mono">Face ID: {face.id}</p>
-                        <p className="text-gray-400 text-sm">
-                          Confidence: {(face.confidence * 100).toFixed(1)}%
-                        </p>
+                      <p className={`text-sm ${face.confidence < 0.6 ? 'text-red-400' : face.confidence < 0.9 ? 'text-yellow-400' : 'text-green-400'}`}>
+                        Confidence: {(face.confidence * 100).toFixed(1)}%
+                        {face.confidence < 0.6 && ' 🔴 Poor'}
+                        {face.confidence >= 0.6 && face.confidence < 0.7 && ' 🟠 Fair'}
+                        {face.confidence >= 0.7 && face.confidence < 0.9 && ' 🟡 Good'}
+                        {face.confidence >= 0.9 && ' 🟢 Excellent'}
+                      </p>
                         <p className="text-gray-500 text-xs">
                           Enrolled: {new Date(face.created_at).toLocaleDateString()}
                         </p>

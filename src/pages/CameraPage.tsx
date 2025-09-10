@@ -45,6 +45,8 @@ export default function CameraPage() {
     capturedPhotos: [],
     capturedEmbeddings: []
   });
+  const [enrolledFacesCount, setEnrolledFacesCount] = useState(0);
+  const [currentConfidence, setCurrentConfidence] = useState<number | null>(null);
   // Students skip the form step since their info is already available
   const [enrollmentStep, setEnrollmentStep] = useState<'form' | 'capture'>(
     isStudent ? 'capture' : 'form'
@@ -109,6 +111,32 @@ export default function CameraPage() {
     console.log('Session counters reset');
   }, []);
 
+  // Fetch enrolled faces count from database
+  useEffect(() => {
+    const fetchEnrolledFacesCount = async () => {
+      if (!user?.id) return;
+      
+      try {
+        const token = localStorage.getItem('token');
+        const response = await fetch('/api/user/faces', {
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json'
+          }
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          setEnrolledFacesCount(data.faces?.length || 0);
+        }
+      } catch (error) {
+        console.error('Error fetching enrolled faces count:', error);
+      }
+    };
+
+    fetchEnrolledFacesCount();
+  }, [user?.id]);
+
   // Play sound effects
   const playSound = useCallback((type: 'success' | 'error' | 'scan') => {
     if (!audioRef.current) return;
@@ -144,6 +172,14 @@ export default function CameraPage() {
   const handleFaceDetected = useCallback(async (faces: any[]) => {
     setFaceCount(faces.length);
     setIsScanning(faces.length > 0);
+    
+    // Update confidence for real-time display
+    if (faces.length > 0) {
+      const confidence = faces[0].detection?.score || 0;
+      setCurrentConfidence(confidence);
+    } else {
+      setCurrentConfidence(null);
+    }
     
     // Store faces data for enrollment
     if (faces.length > 0) {
@@ -348,7 +384,7 @@ export default function CameraPage() {
       return;
     }
 
-    if (enrollmentData.capturedPhotos.length >= 6) {
+    if (Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) >= 6) {
       alert("Maximum number of photos (6) has been reached");
       return;
     }
@@ -397,7 +433,7 @@ export default function CameraPage() {
 
   const completeEnrollment = () => {
     // Validation
-    if (enrollmentData.capturedPhotos.length < 6) {
+    if (Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) < 6) {
       alert("Please capture all 6 required photos before completing enrollment");
       return;
     }
@@ -538,6 +574,40 @@ export default function CameraPage() {
     );
   }
 
+  // Show completion banner if student has captured all 6 photos but hasn't completed enrollment
+  if (isStudent && (enrollmentData.capturedPhotos.length === 6 || enrolledFacesCount === 6) && !isEnrolled) {
+    return (
+      <div className="space-y-8 animate-fade-in">
+        <div className="glass-card p-8 text-center">
+          <div className="w-20 h-20 mx-auto bg-green-500/20 rounded-full flex items-center justify-center mb-4">
+            <svg className="w-10 h-10 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+          </div>
+          <h1 className="text-3xl font-bold font-heading gradient-text mb-4">
+            {enrolledFacesCount === 6 ? 'Enrollment Complete! ✅' : 'Enrollment Ready! ✅'}
+          </h1>
+          <p className="text-gray-300 text-lg mb-6">
+            {enrolledFacesCount === 6 
+              ? 'You have successfully enrolled all 6 face photos! Your enrollment is complete.'
+              : 'You\'ve captured all 6 required face photos! Complete your enrollment to finish the process.'
+            }
+          </p>
+          <div className="flex justify-center gap-4">
+            {enrolledFacesCount < 6 && (
+              <CyberButton onClick={completeEnrollment} variant="primary">
+                Complete Enrollment
+              </CyberButton>
+            )}
+            <CyberButton onClick={() => window.location.href = '/profile'} variant="secondary">
+              {enrolledFacesCount === 6 ? 'Manage Profile' : 'Review Photos'}
+            </CyberButton>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-8 animate-fade-in">
       {/* Header */}
@@ -636,6 +706,41 @@ export default function CameraPage() {
                 isActive={isActive}
               />
               
+              {/* Real-time Confidence Display */}
+              {mode === 'enroll' && (
+                <div className="absolute top-4 right-4 bg-black/80 backdrop-blur-sm rounded-lg p-3 border border-cyan-400/30">
+                  <div className="flex items-center gap-2">
+                    <div className={`w-3 h-3 rounded-full ${
+                      currentConfidence === null ? 'bg-gray-500' :
+                      currentConfidence >= 0.9 ? 'bg-green-400 animate-pulse' :
+                      currentConfidence >= 0.7 ? 'bg-yellow-400' :
+                      currentConfidence >= 0.6 ? 'bg-orange-400' :
+                      'bg-red-400'
+                    }`}></div>
+                    <div>
+                      <p className="text-xs text-gray-300">Confidence</p>
+                      <p className={`text-lg font-mono font-bold ${
+                        currentConfidence === null ? 'text-gray-400' :
+                        currentConfidence >= 0.9 ? 'text-green-400' :
+                        currentConfidence >= 0.7 ? 'text-yellow-400' :
+                        currentConfidence >= 0.6 ? 'text-orange-400' :
+                        'text-red-400'
+                      }`}>
+                        {currentConfidence === null ? '--%' : `${(currentConfidence * 100).toFixed(1)}%`}
+                      </p>
+                    </div>
+                  </div>
+                  {currentConfidence !== null && (
+                    <p className="text-xs text-gray-400 mt-1">
+                      {currentConfidence >= 0.9 ? '🟢 Excellent' :
+                       currentConfidence >= 0.7 ? '🟡 Good' :
+                       currentConfidence >= 0.6 ? '🟠 Fair' :
+                       '🔴 Poor'}
+                    </p>
+                  )}
+                </div>
+              )}
+              
               {/* Face Detection Overlay */}
               <FaceDetectionOverlay
                 isScanning={isScanning}
@@ -661,12 +766,22 @@ export default function CameraPage() {
                     </h3>
                     <div className="mb-4">
                       <p className="text-cyan-400 font-mono">
-                        {enrollmentData.capturedPhotos.length}/6 photos captured
+                        {Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount)}/6 photos captured
                       </p>
-                      {enrollmentData.capturedPhotos.length < 6 && (
+                      {Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) < 6 && (
                         <p className="text-gray-300 text-sm mt-1">
                           Position your face in the center and look directly at the camera
                         </p>
+                      )}
+                      {Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) === 6 && (
+                        <div className="mt-2 p-3 bg-green-500/20 border border-green-500/30 rounded-lg">
+                          <p className="text-green-400 font-bold text-sm">
+                            ✅ Enrollment Complete! All 6 faces captured successfully.
+                          </p>
+                          <p className="text-green-300 text-xs mt-1">
+                            You can now manage your face data in the Profile tab.
+                          </p>
+                        </div>
                       )}
                     </div>
 
@@ -694,13 +809,45 @@ export default function CameraPage() {
                     )}
 
                     <div className="flex gap-3">
-                      <CyberButton
-                        variant="primary"
-                        onClick={handleEnrollmentCapture}
-                        disabled={!isActive || faceCount === 0 || enrollmentData.capturedPhotos.length >= 6}
-                      >
-                        📸 Capture Face ({6 - enrollmentData.capturedPhotos.length} remaining)
-                      </CyberButton>
+                      {Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) < 6 ? (
+                        <div className="flex flex-col items-center gap-2">
+                          <CyberButton
+                            variant="primary"
+                            onClick={handleEnrollmentCapture}
+                            disabled={!isActive || faceCount === 0}
+                            glowColor={currentConfidence && currentConfidence >= 0.7 ? "#00ff00" : "#ff6b6b"}
+                          >
+                            📸 Capture Face ({6 - Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount)} remaining)
+                          </CyberButton>
+                          
+                          {/* Capture Quality Indicator */}
+                          {currentConfidence !== null && (
+                            <div className="text-center">
+                              <div className={`inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono ${
+                                currentConfidence >= 0.9 ? 'bg-green-500/20 text-green-400 border border-green-500/30' :
+                                currentConfidence >= 0.7 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                                currentConfidence >= 0.6 ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                'bg-red-500/20 text-red-400 border border-red-500/30'
+                              }`}>
+                                <span>Quality: {(currentConfidence * 100).toFixed(1)}%</span>
+                                {currentConfidence < 0.6 && <span>⚠️ Consider repositioning</span>}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {currentConfidence === null && (
+                            <p className="text-sm text-gray-500">Position your face in the camera view</p>
+                          )}
+                        </div>
+                      ) : (
+                        <CyberButton
+                          variant="secondary"
+                          disabled={true}
+                          className="bg-green-500/20 border-green-500/30 text-green-400"
+                        >
+                          ✅ All 6 Faces Captured!
+                        </CyberButton>
+                      )}
                       {enrollmentData.capturedPhotos.length > 0 && (
                         <CyberButton
                           variant="success"
@@ -974,6 +1121,18 @@ export default function CameraPage() {
                   </span>
                 </div>
               </div>
+              
+              {isStudent && (
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-300 text-sm">Face Enrollment</span>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-2 h-2 rounded-full ${Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) === 6 ? 'bg-green-400 animate-cyber-pulse' : Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) > 0 ? 'bg-yellow-400' : 'bg-gray-500'}`}></div>
+                    <span className={`font-mono text-sm ${Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) === 6 ? 'text-green-400' : Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) > 0 ? 'text-yellow-400' : 'text-gray-400'}`}>
+                      {Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount) === 6 ? 'COMPLETE (6/6)' : `${Math.max(enrollmentData.capturedPhotos.length, enrolledFacesCount)}/6 FACES`}
+                    </span>
+                  </div>
+                </div>
+              )}
               
               <div className="flex items-center justify-between">
                 <span className="text-gray-300 text-sm">Processing Speed</span>

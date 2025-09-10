@@ -260,21 +260,29 @@ db.serialize(() => {
 });
 
 // Health check
-app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
+app.get('/api/health', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    message: 'Backend is running ✅',
+    timestamp: new Date().toISOString(),
+    port: PORT,
+    database: 'connected'
+  });
+});
 
 // Auth endpoints
 app.post('/api/auth/login', (req, res) => {
   // Accept either student_id or email for login to support frontend behavior
   const { student_id, email, password, adminKey } = req.body;
-  if ((!student_id && !email) || !password) return res.status(400).json({ error: 'student_id/email and password required' });
+  if ((!student_id && !email) || !password) return res.status(400).json({ success: false, message: 'student_id/email and password required' });
 
   const lookupField = email ? 'email' : 'student_id';
   const lookupValue = email ? email : student_id;
 
   db.get(`SELECT * FROM users WHERE ${lookupField} = ?`, [lookupValue], (err, user) => {
-    if (err) return res.status(500).json({ error: err.message });
+    if (err) return res.status(500).json({ success: false, message: err.message });
     if (!user || !bcrypt.compareSync(password, user.password_hash || '')) {
-      return res.status(401).json({ error: 'Invalid credentials' });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
     // Admin PIN check (set ADMIN_PIN in environment; do NOT hardcode in source)
@@ -286,7 +294,19 @@ app.post('/api/auth/login', (req, res) => {
     const token = jwt.sign(tokenPayload, JWT_SECRET);
 
     // Return token and user object compatible with frontend expectations
-    res.json({ token, user: { id: user.id, name: user.name, role: user.role, email: user.email, student_id: user.student_id, isAdmin } });
+    res.status(200).json({ 
+      success: true,
+      message: "Login successful",
+      token, 
+      user: { 
+        id: user.id, 
+        name: user.name, 
+        role: user.role, 
+        email: user.email, 
+        student_id: user.student_id, 
+        isAdmin 
+      } 
+    });
   });
 });
 
@@ -369,20 +389,20 @@ app.post('/api/auth/admin-key', (req, res) => {
   const { pin } = req.body;
   
   if (!pin) {
-    return res.status(400).json({ error: 'PIN is required' });
+    return res.status(400).json({ success: false, message: 'PIN is required' });
   }
 
   // Hardcoded admin PIN as requested
   const ADMIN_PIN = '030702';
   
   if (pin !== ADMIN_PIN) {
-    return res.status(401).json({ error: '❌ Invalid Admin Key.' });
+    return res.status(401).json({ success: false, message: '❌ Invalid Admin Key.' });
   }
 
   // Check if admin user exists, create if not
   db.get(`SELECT * FROM users WHERE email = ?`, ['admin@dut4life.ac.za'], (err, existingUser) => {
     if (err) {
-      return res.status(500).json({ error: err.message });
+      return res.status(500).json({ success: false, message: err.message });
     }
 
     if (existingUser) {
@@ -390,7 +410,9 @@ app.post('/api/auth/admin-key', (req, res) => {
       const tokenPayload = { id: existingUser.id, role: 'admin', isAdmin: true };
       const token = jwt.sign(tokenPayload, JWT_SECRET);
       
-      res.json({ 
+      res.status(200).json({ 
+        success: true,
+        message: "Admin access granted",
         token, 
         user: { 
           id: existingUser.id, 
@@ -571,6 +593,8 @@ app.post('/api/user/faces/enroll', upload.single('image'), (req, res) => {
     
     // Use actual confidence from face detection, or default to reasonable value
     const actualConfidence = confidence && confidence > 0 ? confidence : 0.8;
+    
+    console.log('Face enrollment confidence:', { confidence, actualConfidence });
 
     if (!embedding) return res.status(400).json({ error: 'Face embedding required' });
 
@@ -934,6 +958,181 @@ app.post('/api/models/download', async (req, res) => {
     });
   } catch (error) {
     res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+// Analytics Dashboard API
+app.get('/api/analytics/dashboard', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    if (decoded.role !== 'admin' && decoded.role !== 'teacher') {
+      return res.status(403).json({ error: 'Admin access required' });
+    }
+
+    // Get all users
+    db.all('SELECT id, name, student_id, role FROM users WHERE role = "student"', [], (err, users) => {
+      if (err) return res.status(500).json({ error: err.message });
+
+      const totalStudents = users.length;
+      
+      // Get today's attendance
+      const today = new Date().toISOString().split('T')[0];
+      db.all(`
+        SELECT DISTINCT user_id, name, student_id, timestamp, status
+        FROM attendance_records al
+        JOIN users u ON al.user_id = u.id
+        WHERE DATE(timestamp) = ? AND status = 'present'
+      `, [today], (err, todayAttendance) => {
+        if (err) return res.status(500).json({ error: err.message });
+
+        const presentToday = todayAttendance.length;
+        const attendanceRate = totalStudents > 0 ? (presentToday / totalStudents) * 100 : 0;
+
+        // Calculate performance grade
+        let performanceGrade = 'F';
+        if (attendanceRate >= 90) performanceGrade = 'A+';
+        else if (attendanceRate >= 80) performanceGrade = 'A';
+        else if (attendanceRate >= 70) performanceGrade = 'B';
+        else if (attendanceRate >= 60) performanceGrade = 'C';
+        else if (attendanceRate >= 50) performanceGrade = 'D';
+
+        // Get top performers (users with highest attendance rates)
+        db.all(`
+          SELECT u.id, u.name, u.student_id,
+                 COUNT(CASE WHEN al.status = 'present' THEN 1 END) as present_count,
+                 COUNT(al.id) as total_sessions
+          FROM users u
+          LEFT JOIN attendance_records al ON u.id = al.user_id
+          WHERE u.role = 'student'
+          GROUP BY u.id, u.name, u.student_id
+          HAVING total_sessions > 0
+          ORDER BY (present_count * 1.0 / total_sessions) DESC
+          LIMIT 5
+        `, [], (err, topPerformers) => {
+          if (err) return res.status(500).json({ error: err.message });
+
+          const formattedTopPerformers = topPerformers.map(p => ({
+            name: p.name,
+            student_id: p.student_id,
+            attendanceRate: p.total_sessions > 0 ? (p.present_count / p.total_sessions) * 100 : 0
+          }));
+
+          // Get recent activity (last 10 attendance records)
+          db.all(`
+            SELECT u.name, u.student_id, al.timestamp, al.status
+            FROM attendance_records al
+            JOIN users u ON al.user_id = u.id
+            ORDER BY al.timestamp DESC
+            LIMIT 10
+          `, [], (err, recentActivity) => {
+            if (err) return res.status(500).json({ error: err.message });
+
+            // Get daily attendance for the last 7 days
+            db.all(`
+              SELECT DATE(timestamp) as date,
+                     COUNT(CASE WHEN status = 'present' THEN 1 END) as present,
+                     COUNT(DISTINCT user_id) as total
+              FROM attendance_records
+              WHERE timestamp >= date('now', '-7 days')
+              GROUP BY DATE(timestamp)
+              ORDER BY date DESC
+            `, [], (err, dailyAttendance) => {
+              if (err) return res.status(500).json({ error: err.message });
+
+              res.json({
+                attendanceRate: Math.round(attendanceRate * 100) / 100,
+                presentToday,
+                totalStudents,
+                performanceGrade,
+                topPerformers: formattedTopPerformers,
+                recentActivity: recentActivity.map(a => ({
+                  name: a.name,
+                  student_id: a.student_id,
+                  timestamp: a.timestamp,
+                  status: a.status
+                })),
+                dailyAttendance: dailyAttendance.map(d => ({
+                  date: d.date,
+                  present: d.present,
+                  total: d.total
+                }))
+              });
+            });
+          });
+        });
+      });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// Get user's face embeddings (admin view)
+app.get('/api/user/faces', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { userId } = req.query;
+    
+    // Check if admin or requesting own data
+    if (decoded.role !== 'admin' && decoded.role !== 'teacher' && decoded.id != userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    const targetUserId = userId || decoded.id;
+    
+    db.all('SELECT * FROM face_embeddings WHERE user_id = ? ORDER BY created_at DESC', [targetUserId], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      res.json({
+        faces: rows,
+        maxFaces: 6,
+        remainingSlots: Math.max(0, 6 - rows.length)
+      });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
+  }
+});
+
+// Get user's attendance records
+app.get('/api/user/attendance/:userId', (req, res) => {
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Authentication required' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    const { userId } = req.params;
+    
+    // Check if admin or requesting own data
+    if (decoded.role !== 'admin' && decoded.role !== 'teacher' && decoded.id != userId) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+
+    db.all(`
+      SELECT al.*, s.name as class_name
+            FROM attendance_records al
+      LEFT JOIN attendance_sessions s ON al.session_id = s.id
+      WHERE al.user_id = ?
+      ORDER BY al.timestamp DESC
+      LIMIT 100
+    `, [userId], (err, rows) => {
+      if (err) return res.status(500).json({ error: err.message });
+      
+      res.json({
+        records: rows
+      });
+    });
+  } catch (error) {
+    return res.status(401).json({ error: 'Invalid token' });
   }
 });
 

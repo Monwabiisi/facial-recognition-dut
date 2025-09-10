@@ -3,6 +3,8 @@ import { useAuth } from '../contexts/AuthContext';
 import CyberButton from '../components/CyberButton';
 import CyberInput from '../components/CyberInput';
 import DUTLogo from '../components/DUTLogo';
+import UserProfileModal from '../components/UserProfileModal';
+import AnalyticsDashboard from '../components/AnalyticsDashboard';
 
 type User = {
   id: number;
@@ -28,15 +30,20 @@ const POLL_INTERVAL = 5000;
 
 export default function AdminDashboard(): JSX.Element {
   const { user, isTeacher } = useAuth();
+  const isAdmin = user?.role === 'admin' || user?.role === 'teacher';
   const [users, setUsers] = useState<User[]>([]);
   const [attendance, setAttendance] = useState<AttendanceRecord[]>([]);
   const [selectedUsers, setSelectedUsers] = useState<Record<number, boolean>>({});
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<'analytics' | 'users' | 'attendance'>('analytics');
+  const [selectedUser, setSelectedUser] = useState<User | null>(null);
+  const [showUserProfile, setShowUserProfile] = useState(false);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
 
   useEffect(() => {
-    if (!isTeacher) return;
+    if (!isAdmin) return;
     let mounted = true;
     
     async function fetchAll() {
@@ -95,6 +102,7 @@ export default function AdminDashboard(): JSX.Element {
           setUsers(userData);
           setAttendance(attendanceRows);
           setLastError(null);
+          setRefreshTrigger(prev => prev + 1); // Trigger analytics refresh
         }
       } catch (err: any) {
         if (mounted) setLastError(err.message || String(err));
@@ -109,7 +117,7 @@ export default function AdminDashboard(): JSX.Element {
       mounted = false;
       clearInterval(id);
     };
-  }, [isTeacher]);
+  }, [isAdmin]);
 
   const filteredUsers = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -117,7 +125,7 @@ export default function AdminDashboard(): JSX.Element {
     return users.filter(u => (u.name + ' ' + u.email + ' ' + u.student_id).toLowerCase().includes(q));
   }, [users, query]);
 
-  if (!isTeacher) {
+  if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center p-8">
         <div className="glass-card p-10 text-center max-w-xl">
@@ -185,189 +193,215 @@ export default function AdminDashboard(): JSX.Element {
             </div>
           </div>
           <div className="flex items-center gap-3">
-            <CyberInput 
-              label="Search"
-              value={query} 
-              onChange={(e:any) => setQuery(e.target.value)} 
-              placeholder="Search users..." 
-            />
+            {activeTab === 'users' && (
+              <CyberInput 
+                label="Search"
+                value={query} 
+                onChange={(e:any) => setQuery(e.target.value)} 
+                placeholder="Search users..." 
+              />
+            )}
             <CyberButton onClick={() => exportCSV(users, 'users.csv')}>Export Users</CyberButton>
             <CyberButton onClick={() => exportCSV(attendance, 'attendance.csv')}>Export Attendance</CyberButton>
           </div>
         </header>
 
-        {/* Overview cards */}
-        <section className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div className="glass-card p-4">
-            <h3 className="text-sm text-gray-300">Total Users</h3>
-            <p className="text-3xl font-bold">{users.length}</p>
-          </div>
-          <div className="glass-card p-4">
-            <h3 className="text-sm text-gray-300">Pending Approvals</h3>
-            <p className="text-3xl font-bold">{users.filter(u => u.role === 'pending').length}</p>
-          </div>
-          <div className="glass-card p-4">
-            <h3 className="text-sm text-gray-300">Attendance Records</h3>
-            <p className="text-3xl font-bold">{attendance.length}</p>
-          </div>
-          <div className="glass-card p-4">
-            <h3 className="text-sm text-gray-300">Last Updated</h3>
-            <p className="text-3xl font-bold">{new Date().toLocaleTimeString()}</p>
-          </div>
-        </section>
+        {/* Tab Navigation */}
+        <div className="flex space-x-1 bg-black/20 rounded-lg p-1">
+          <button
+            onClick={() => setActiveTab('analytics')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'analytics'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            📊 Analytics
+          </button>
+          <button
+            onClick={() => setActiveTab('users')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'users'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            👥 User Management
+          </button>
+          <button
+            onClick={() => setActiveTab('attendance')}
+            className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+              activeTab === 'attendance'
+                ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30'
+                : 'text-gray-400 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            📋 Attendance Review
+          </button>
+        </div>
 
-        {/* Pending approvals + bulk actions */}
-        <section className="glass-card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">User Management</h2>
-            <div className="flex items-center gap-2">
-              <CyberButton onClick={bulkApprove} disabled={loading}>Bulk Approve</CyberButton>
-              <CyberButton onClick={() => exportCSV(filteredUsers, 'users_filtered.csv')}>Export</CyberButton>
+        {/* Tab Content */}
+        {activeTab === 'analytics' && (
+          <AnalyticsDashboard refreshTrigger={refreshTrigger} />
+        )}
+
+        {activeTab === 'users' && (
+          <section className="glass-card p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">User Management</h2>
+              <div className="flex items-center gap-2">
+                <CyberButton onClick={bulkApprove} disabled={loading}>Bulk Approve</CyberButton>
+                <CyberButton onClick={() => exportCSV(filteredUsers, 'users_filtered.csv')}>Export</CyberButton>
+              </div>
             </div>
-          </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full table-auto text-left">
-              <thead>
-                <tr className="text-sm text-gray-400">
-                  <th className="px-3 py-2">Select</th>
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Email</th>
-                  <th className="px-3 py-2">Student ID</th>
-                  <th className="px-3 py-2">Role</th>
-                  <th className="px-3 py-2">Created</th>
-                  <th className="px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredUsers.map(u => (
-                  <tr key={u.id} className="border-t border-white/5">
-                    <td className="px-3 py-2">
-                      <input type="checkbox" checked={!!selectedUsers[u.id]} onChange={() => toggleSelect(u.id)} />
-                    </td>
-                    <td className="px-3 py-2">{u.name}</td>
-                    <td className="px-3 py-2">{u.email}</td>
-                    <td className="px-3 py-2">{u.student_id}</td>
-                    <td className="px-3 py-2">{u.role}</td>
-                    <td className="px-3 py-2">{u.created_at ?? '-'}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2">
-                        {u.role === 'pending' ? (
-                          <>
-                            <CyberButton onClick={async () => {
-                              try {
-                                await fetch(`/api/users/${u.id}/approve`, { method: 'POST' });
-                                const res = await fetch('/api/users');
-                                if (res.ok) setUsers(await res.json());
-                              } catch (e) { setLastError((e as Error).message); }
-                            }}>Approve</CyberButton>
-                            <CyberButton onClick={async () => {
-                              try {
-                                await fetch(`/api/users/${u.id}/reject`, { method: 'POST' });
-                                const res = await fetch('/api/users');
-                                if (res.ok) setUsers(await res.json());
-                              } catch (e) { setLastError((e as Error).message); }
-                            }} variant="secondary">Reject</CyberButton>
-                          </>
-                        ) : (
-                          <select
-                            className="bg-black/20 border border-cyan-500/30 rounded px-3 py-1.5 text-sm font-mono text-cyan-400 hover:border-cyan-500/50 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-colors duration-200"
-                            value={u.role}
-                            onChange={async (e) => {
-                              try {
-                                await fetch(`/api/users/${u.id}/role`, {
-                                  method: 'POST',
-                                  headers: { 'Content-Type': 'application/json' },
-                                  body: JSON.stringify({ role: e.target.value })
-                                });
-                                const res = await fetch('/api/users');
-                                if (res.ok) setUsers(await res.json());
-                              } catch (e) { setLastError((e as Error).message); }
+            <div className="overflow-x-auto">
+              <table className="w-full table-auto text-left">
+                <thead>
+                  <tr className="text-sm text-gray-400">
+                    <th className="px-3 py-2">Select</th>
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Email</th>
+                    <th className="px-3 py-2">Student ID</th>
+                    <th className="px-3 py-2">Role</th>
+                    <th className="px-3 py-2">Created</th>
+                    <th className="px-3 py-2">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {filteredUsers.map(u => (
+                    <tr key={u.id} className="border-t border-white/5">
+                      <td className="px-3 py-2">
+                        <input type="checkbox" checked={!!selectedUsers[u.id]} onChange={() => toggleSelect(u.id)} />
+                      </td>
+                      <td className="px-3 py-2">{u.name}</td>
+                      <td className="px-3 py-2">{u.email}</td>
+                      <td className="px-3 py-2">{u.student_id}</td>
+                      <td className="px-3 py-2">{u.role}</td>
+                      <td className="px-3 py-2">{u.created_at ?? '-'}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <CyberButton 
+                            onClick={() => {
+                              setSelectedUser(u);
+                              setShowUserProfile(true);
                             }}
+                            className="text-xs px-2 py-1"
                           >
-                            <option value="student">Student</option>
-                            <option value="teacher">Teacher</option>
-                          </select>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* Attendance review */}
-        <section className="glass-card p-4">
-          <div className="flex items-center justify-between mb-4">
-            <h2 className="text-lg font-bold">Attendance Review</h2>
-            <div className="flex items-center gap-2">
-              <CyberButton onClick={() => exportCSV(attendance, 'attendance_all.csv')}>Export All</CyberButton>
+                            👁️ View Profile
+                          </CyberButton>
+                          {u.role === 'pending' ? (
+                            <>
+                              <CyberButton onClick={async () => {
+                                try {
+                                  await fetch(`/api/users/${u.id}/approve`, { method: 'POST' });
+                                  const res = await fetch('/api/users');
+                                  if (res.ok) setUsers(await res.json());
+                                } catch (e) { setLastError((e as Error).message); }
+                              }}>Approve</CyberButton>
+                              <CyberButton onClick={async () => {
+                                try {
+                                  await fetch(`/api/users/${u.id}/reject`, { method: 'POST' });
+                                  const res = await fetch('/api/users');
+                                  if (res.ok) setUsers(await res.json());
+                                } catch (e) { setLastError((e as Error).message); }
+                              }} variant="secondary">Reject</CyberButton>
+                            </>
+                          ) : (
+                            <select
+                              className="bg-black/20 border border-cyan-500/30 rounded px-3 py-1.5 text-sm font-mono text-cyan-400 hover:border-cyan-500/50 focus:border-cyan-500 focus:ring-1 focus:ring-cyan-500 focus:outline-none transition-colors duration-200"
+                              value={u.role}
+                              onChange={async (e) => {
+                                try {
+                                  await fetch(`/api/users/${u.id}/role`, {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({ role: e.target.value })
+                                  });
+                                  const res = await fetch('/api/users');
+                                  if (res.ok) setUsers(await res.json());
+                                } catch (e) { setLastError((e as Error).message); }
+                              }}
+                            >
+                              <option value="student">Student</option>
+                              <option value="teacher">Teacher</option>
+                            </select>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </div>
+          </section>
+        )}
 
-          <div className="overflow-x-auto">
-            <table className="w-full table-auto text-left">
-              <thead>
-                <tr className="text-sm text-gray-400">
-                  <th className="px-3 py-2">Name</th>
-                  <th className="px-3 py-2">Class</th>
-                  <th className="px-3 py-2">Time</th>
-                  <th className="px-3 py-2">Status</th>
-                  <th className="px-3 py-2">Confidence</th>
-                  <th className="px-3 py-2">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {attendance.map(a => (
-                  <tr key={a.id} className="border-t border-white/5">
-                    <td className="px-3 py-2">{a.name}</td>
-                    <td className="px-3 py-2">{a.class_name}</td>
-                    <td className="px-3 py-2">{a.timestamp}</td>
-                    <td className="px-3 py-2">{a.status}</td>
-                    <td className="px-3 py-2">{(a.confidence ?? 0).toFixed(2)}</td>
-                    <td className="px-3 py-2">
-                      <div className="flex gap-2">
-                        <CyberButton onClick={async () => {
-                          try {
-                            await fetch('/api/attendance/record', { method: 'POST', body: JSON.stringify({ session_id: a.session_id, user_id: a.user_id, status: 'present' }), headers: { 'Content-Type': 'application/json' } });
-                            setLastError(null);
-                          } catch (e) { setLastError((e as Error).message); }
-                        }}>Mark Present</CyberButton>
-                        <CyberButton variant="secondary" onClick={async () => {
-                          try {
-                            await fetch('/api/attendance/record', { method: 'POST', body: JSON.stringify({ session_id: a.session_id, user_id: a.user_id, status: 'absent' }), headers: { 'Content-Type': 'application/json' } });
-                          } catch (e) { setLastError((e as Error).message); }
-                        }}>Mark Absent</CyberButton>
-                      </div>
-                    </td>
+        {activeTab === 'attendance' && (
+          <section className="glass-card p-4">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-bold">Attendance Review</h2>
+              <div className="flex items-center gap-2">
+                <CyberButton onClick={() => exportCSV(attendance, 'attendance_all.csv')}>Export All</CyberButton>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full table-auto text-left">
+                <thead>
+                  <tr className="text-sm text-gray-400">
+                    <th className="px-3 py-2">Name</th>
+                    <th className="px-3 py-2">Class</th>
+                    <th className="px-3 py-2">Time</th>
+                    <th className="px-3 py-2">Status</th>
+                    <th className="px-3 py-2">Confidence</th>
+                    <th className="px-3 py-2">Actions</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        {/* System analytics placeholder */}
-        <section className="glass-card p-4">
-          <h2 className="text-lg font-bold mb-4">System Analytics</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-black/20 rounded">Usage chart placeholder</div>
-            <div className="p-4 bg-black/20 rounded">Attendance trends placeholder</div>
-            <div className="p-4 bg-black/20 rounded">Top flagged students placeholder</div>
-          </div>
-        </section>
-
-        {/* Audit logs */}
-        <section className="glass-card p-4">
-          <h2 className="text-lg font-bold mb-4">Audit Logs</h2>
-          <div className="text-sm text-gray-300">Audit logging is enabled in the server and will appear here when available.</div>
-        </section>
+                </thead>
+                <tbody>
+                  {attendance.map(a => (
+                    <tr key={a.id} className="border-t border-white/5">
+                      <td className="px-3 py-2">{a.name}</td>
+                      <td className="px-3 py-2">{a.class_name}</td>
+                      <td className="px-3 py-2">{a.timestamp}</td>
+                      <td className="px-3 py-2">{a.status}</td>
+                      <td className="px-3 py-2">{(a.confidence ?? 0).toFixed(2)}</td>
+                      <td className="px-3 py-2">
+                        <div className="flex gap-2">
+                          <CyberButton onClick={async () => {
+                            try {
+                              await fetch('/api/attendance/record', { method: 'POST', body: JSON.stringify({ session_id: a.session_id, user_id: a.user_id, status: 'present' }), headers: { 'Content-Type': 'application/json' } });
+                              setLastError(null);
+                            } catch (e) { setLastError((e as Error).message); }
+                          }}>Mark Present</CyberButton>
+                          <CyberButton variant="secondary" onClick={async () => {
+                            try {
+                              await fetch('/api/attendance/record', { method: 'POST', body: JSON.stringify({ session_id: a.session_id, user_id: a.user_id, status: 'absent' }), headers: { 'Content-Type': 'application/json' } });
+                            } catch (e) { setLastError((e as Error).message); }
+                          }}>Mark Absent</CyberButton>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        )}
 
         {lastError && (
           <div className="text-red-400">{lastError}</div>
         )}
+
+        {/* User Profile Modal */}
+        <UserProfileModal
+          user={selectedUser}
+          isOpen={showUserProfile}
+          onClose={() => {
+            setShowUserProfile(false);
+            setSelectedUser(null);
+          }}
+        />
       </div>
     </div>
   );
