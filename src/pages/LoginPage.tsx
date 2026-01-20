@@ -10,7 +10,7 @@ import FormInput from '../components/FormInput';
 export default function LoginPage() {
   // 3️⃣ State for form data and validation
   const [formData, setFormData] = useState({
-    email: '',
+    username: '',
     password: ''
   });
   const [errors, setErrors] = useState<{[key: string]: string}>({});
@@ -34,11 +34,9 @@ export default function LoginPage() {
   const validateForm = () => {
     const newErrors: {[key: string]: string} = {};
 
-    // Email validation
-    if (!formData.email) {
-      newErrors.email = 'Email is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email)) {
-      newErrors.email = 'Please enter a valid email address';
+    // Username validation
+    if (!formData.username) {
+      newErrors.username = 'Username is required';
     }
 
     // Password validation
@@ -65,36 +63,14 @@ export default function LoginPage() {
       setLoading(true);
       setErrors({});
       
-      // 8️⃣ Attempt to login with Firebase
-      await login(formData.email, formData.password);
+      // 8️⃣ Attempt to login with our backend
+      await login(formData.username, formData.password);
       
       // 9️⃣ Redirect to dashboard on success
       navigate('/dashboard');
     } catch (error: any) {
       // 🔟 Handle login errors with user-friendly messages
-      let errorMessage = 'Failed to log in. Please try again.';
-      
-      switch (error.code) {
-        case 'auth/user-not-found':
-          errorMessage = 'No account found with this email address';
-          break;
-        case 'auth/wrong-password':
-          errorMessage = 'Incorrect password. Please try again.';
-          break;
-        case 'auth/invalid-email':
-          errorMessage = 'Invalid email address format';
-          break;
-        case 'auth/too-many-requests':
-          errorMessage = 'Too many failed attempts. Please try again later.';
-          break;
-        case 'auth/user-disabled':
-          errorMessage = 'This account has been disabled';
-          break;
-        default:
-          errorMessage = error.message || 'An unexpected error occurred';
-      }
-      
-      setErrors({ general: errorMessage });
+      setErrors({ general: error.message || 'An unexpected error occurred' });
     } finally {
       setLoading(false);
     }
@@ -147,17 +123,17 @@ export default function LoginPage() {
 
             {/* Login form */}
             <form onSubmit={handleSubmit} className="space-y-6">
-              {/* Email input */}
+              {/* Username input */}
               <FormInput
-                label="Email Address"
-                type="email"
-                value={formData.email}
-                onChange={(e) => handleInputChange('email', e.target.value)}
-                error={errors.email}
-                variant={errors.email ? 'error' : 'default'}
+                label="Username"
+                type="text"
+                value={formData.username}
+                onChange={(e) => handleInputChange('username', e.target.value)}
+                error={errors.username}
+                variant={errors.username ? 'error' : 'default'}
                 icon={
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 12a4 4 0 10-8 0 4 4 0 008 0zm0 0v1.5a2.5 2.5 0 005 0V12a9 9 0 10-9 9m4.5-1.206a8.959 8.959 0 01-4.5 1.207" />
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                   </svg>
                 }
                 required

@@ -1,26 +1,68 @@
 // src/pages/EnrollPage.tsx
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useCamera } from '../hooks/useCamera';
+import { useAuth } from '../contexts/AuthContext';
 
 const EnrollPage: React.FC = () => {
   const { videoRef, ready } = useCamera();
-  const [userId, setUserId] = useState('');
+  const { token, currentUser } = useAuth();
   const [sampleCount, setSampleCount] = useState(0);
   const [enrolling, setEnrolling] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Listen for spacebar press to capture a sample
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Check if the spacebar was pressed and if capturing is allowed
+      if (event.code === 'Space' && ready && !enrolling && sampleCount < 5) {
+        event.preventDefault(); // Prevent page from scrolling
+        handleCaptureSample();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+
+    // Cleanup the event listener on component unmount
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [ready, enrolling, sampleCount]); // Rerun effect if these dependencies change
+
   const handleCaptureSample = async () => {
-    if (!userId || sampleCount >= 5) return;
-    
+    if (!videoRef.current || !token || sampleCount >= 5) return;
+
     setEnrolling(true);
+    setError(null);
+
     try {
-      // Call your enrollment service here
-      // const descriptor = await detectDescriptorFromVideo(videoRef.current!);
-      // await enrollFacade.addSample(userId, descriptor);
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Could not get canvas context');
+
+      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+      const image = canvas.toDataURL('image/jpeg');
+
+      const response = await fetch('http://localhost:8000/faces/register', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify({ image }),
+      });
+
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.detail || 'Failed to register face');
+      }
+
       setSampleCount((prev) => prev + 1);
-      setError(null);
+      alert('Sample captured successfully!'); // Simple toast notification
     } catch (error: any) {
-      setError(error.message || 'Failed to capture sample');
+      setError(error.message);
+      alert(`Error: ${error.message}`); // Simple toast notification
     } finally {
       setEnrolling(false);
     }
@@ -32,16 +74,8 @@ const EnrollPage: React.FC = () => {
       
       <div className="bg-white shadow-md rounded-lg p-6">
         <div className="mb-4">
-          <label className="block text-sm font-medium text-gray-700 mb-1">
-            Student ID
-          </label>
-          <input
-            type="text"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
-            className="w-full p-2 border rounded"
-            placeholder="Enter student ID"
-          />
+          <p className="text-lg">Welcome, <span className="font-semibold">{currentUser?.username}</span>!</p>
+          <p className="text-sm text-gray-600">Press the capture button or hit the spacebar to save a face sample.</p>
         </div>
 
         <div className="mb-4">
@@ -76,9 +110,9 @@ const EnrollPage: React.FC = () => {
 
         <button
           onClick={handleCaptureSample}
-          disabled={!ready || !userId || enrolling || sampleCount >= 5}
+          disabled={!ready || !token || enrolling || sampleCount >= 5}
           className={`w-full py-2 px-4 rounded font-medium ${
-            !ready || !userId || enrolling || sampleCount >= 5
+            !ready || !token || enrolling || sampleCount >= 5
               ? 'bg-gray-300 cursor-not-allowed'
               : 'bg-blue-600 hover:bg-blue-700 text-white'
           }`}
